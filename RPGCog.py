@@ -1,5 +1,4 @@
 import asyncio
-import datetime
 import re
 from pathlib import Path
 from typing import Union
@@ -9,11 +8,18 @@ import discord
 from redbot.core.bot import Red
 from redbot.core.commands import commands
 from redbot.core.utils.predicates import MessagePredicate
+from sqlalchemy import create_engine, Column, Integer, String
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
 
 Cog = getattr(commands, "Cog", object)
 
 MAIN_DB = Path('C:\\Users\\fozar\\AppData\\Local\\Red-DiscordBot\\Red-DiscordBot\\cogs\\CogManager\\cogs\\RPGCog\\db'
                '\\Main.db')
+engine = create_engine('sqlite:///C:\\Users\\fozar\\AppData\\Local\\Red-DiscordBot\\Red-DiscordBot\\cogs\\CogManager'
+                       '\\cogs\\RPGCog\\db\\Main.db')
+
+Base = declarative_base()
 
 
 class Database:
@@ -35,57 +41,78 @@ class Database:
             return rows
 
 
-class Member:
+class Member(Base):
     """ Класс персонажа """
 
-    def __init__(self, name, race, sex, description, lvl, xp):
+    __tablename__ = 'members'
+    id = Column(Integer, primary_key=True)
+    member_id = Column(String)
+    name = Column(String)
+    race = Column(String)
+    sex = Column(String)
+    description = Column(String)
+    lvl = Column(Integer)
+    xp = Column(Integer)
+
+    def __init__(self, member_id, name, race, sex, description, lvl, xp):
+        self.member_id = member_id  # ID участника
         self.name = name  # Имя персонажа
         self.race = race  # Раса персонажа
         self.sex = sex  # Пол персонажа
         self.description = description  # Описание персонажа
         self.lvl = lvl  # Уровень персонажа
         self.xp = xp  # Опыт персонажа
+        # self.inventory = Inventory  # Инвентарь персонажа
 
 
+"""
 class Inventory:
-    """ Класс инвентаря """
+    
 
-    def __init__(self, item, count, stolen, maker):
-        self.item = item  # Предмет
+    def __init__(self):
+        self.helmet = Armor  # Экипированный шлем
+        self.cuirass = Armor  # Экипированная броня
+        self.gauntlets = Armor  # Экипированные перчатки
+        self.boots = Armor  # Экипированные сапоги
+        self.weapon = Weapon  # Экипированное оружие
+        self.shield = Armor  # Экипированный щит
+        self.items = []  # Список предметов
+
+
+class Item:
+   
+
+    def __init__(self, name, description, price, rarity, loot, count, stolen, maker):
+        self.name = name  # Название предмета
+        self.description = description  # Описание предмета
+        self.price = price  # Цена предмета
+        self.rarity = rarity  # Редкость предмета
+        self.loot = loot  # Может ли предмет найден в луте
         self.count = count  # Количество
         self.stolen = stolen  # Украден ли предмет
         self.maker = maker  # Создатель
 
 
-class Item:
-    """ Класс предмета """
-
-    def __init__(self, name, price, rarity, loot):
-        self.name = name  # Название предмета
-        self.price = price  # Цена предмета
-        self.rarity = rarity  # Редкость предмета
-        self.loot = loot  # Может ли предмет найден в луте
-
-
 class Armor(Item):
-    """ Класс брони """
+    
 
-    def __init__(self, slot, kind, armor, name, price, rarity, loot):
-        super().__init__(name, price, rarity, loot)
+    def __init__(self, slot, kind, armor, name, description, price, rarity, loot, count, stolen, maker):
+        super().__init__(name, description, price, rarity, loot, count, stolen, maker)
         self.slot = slot  # Слот брони (шлем/кираса/сапоги/перчатки)
         self.kind = kind  # Легкая/тяжелая/тряпки
         self.armor = armor  # Класс брони
 
 
 class Weapon(Item):
-    """ Класс оружия """
+    
 
-    def __init__(self, melee, hands, kind, damage, name, price, rarity, loot):
-        super().__init__(name, price, rarity, loot)
+    def __init__(self, melee, hands, type, damage, name, description, price, rarity, loot, count, stolen, maker):
+        super().__init__(name, description, price, rarity, loot, count, stolen, maker)
         self.melee = melee  # Ближний или дальний бой
         self.hands = hands  # Сколько рук занимает
-        self.kind = kind  # Тип оружия
+        self.type = type  # Тип оружия
         self.damage = damage  # Урон
+"""
 
 
 class RPGCog(Cog):
@@ -97,25 +124,9 @@ class RPGCog(Cog):
         self.MemberClass = Member
         self.members = {}
         self.CharSessions = []
-        bot.loop.create_task(self.setup())
-
-    async def setup(self):
-        await self.Red.wait_until_ready()
-
-        loaded_members = await self.main_db.fetch(f'SELECT * FROM members')
-        for member_id, name, race, sex, description, lvl, xp in loaded_members:
-            self.members[member_id] = self.MemberClass(name=name,
-                                                       race=race,
-                                                       sex=sex,
-                                                       description=description,
-                                                       lvl=lvl,
-                                                       xp=xp)
-
-        print("Участники загружены")
-
-    async def delete_member(self, member_id):
-        del self.members[member_id]
-        await self.main_db.query(f'DELETE FROM members WHERE member_id={member_id}')
+        session_m = sessionmaker(bind=engine)
+        self.session = session_m()
+        Base.metadata.create_all(engine)
 
     @commands.group(invoke_without_command=True)
     async def char(self, ctx, member: Union[discord.Member, discord.User] = None):
@@ -125,18 +136,17 @@ class RPGCog(Cog):
         if member is None:
             member = author
         member_id = str(member.id)
-
-        if member_id in self.members:
-            name = self.members.get(member_id).name
-            race = self.members.get(member_id).race
-            sex = self.members.get(member_id).sex
-            desc = self.members.get(member_id).description
-            lvl = self.members.get(member_id).lvl
-            xp = self.members.get(member_id).xp
+        char = self.session.query(Member).filter_by(member_id=member_id).first()
+        if char:
+            name = char.name
+            race = char.race
+            sex = char.sex
+            desc = char.description
+            lvl = char.lvl
+            xp = char.xp
 
             embed = discord.Embed(title="{}".format(name), colour=discord.Colour(0xd0021b),
-                                  description="{}".format(desc),
-                                  timestamp=datetime.datetime.utcfromtimestamp(1549457010))
+                                  description="{}".format(desc))
 
             embed.set_footer(text="Информация о персонаже")
 
@@ -163,7 +173,8 @@ class RPGCog(Cog):
             return
 
         # Проверка регистрации
-        if member_id in self.members:
+        char = self.session.query(Member).filter_by(member_id=member_id).first()
+        if char:
             await ctx.send("{}, у вас уже есть персонаж. "
                            "Введите {}char delete, чтобы удалить его.".format(member.mention, ctx.prefix))
             return
@@ -224,17 +235,8 @@ class RPGCog(Cog):
                 race = await self.Red.wait_for("message", timeout=60.0, check=MessagePredicate.same_context(ctx))
             except asyncio.TimeoutError:
                 return "отмена"
-            if race.content.lower() in ["аргонианин",
-                                        "бретонец",
-                                        "данмер",
-                                        "альтмер",
-                                        "имперец",
-                                        "каджит",
-                                        "норд",
-                                        "орк",
-                                        "редгард",
-                                        "босмер",
-                                        "отмена"]:
+            if race.content.lower() in ["аргонианин", "бретонец", "данмер", "альтмер", "имперец", "каджит", "норд",
+                                        "орк", "редгард", "босмер", "отмена"]:
                 return race.content.lower().title()
             else:
                 await ctx.send("{}, не могу найти указанную расу. Повторите попытку.\n"
@@ -310,17 +312,10 @@ class RPGCog(Cog):
             return
 
         # Сохранение персонажа
-        await self.main_db.query(
-            f'INSERT INTO members (member_id, name, race, sex, description) VALUES '
-            f'("{member_id}", "{name_c}", "{race_c}", "{sex_c}", "{description_c}")'
-        )  # Занесение персонажа в базу данных
-        self.members[member_id] = self.MemberClass(name=name_c,
-                                                   race=race_c,
-                                                   sex=sex_c,
-                                                   description=description_c,
-                                                   lvl=1,
-                                                   xp=0)  # Занесение персонажа в словарь
-
+        member_c = self.MemberClass(member_id=member_id, name=name_c, race=race_c, sex=sex_c, description=description_c,
+                                    lvl=1, xp=0)
+        self.session.add(member_c)  # Занесение персонажа в базу данных
+        self.session.commit()
         await ctx.send("{}, ваш персонаж {} создан!".format(member.mention, name_c))
         if ctx in self.CharSessions:
             self.CharSessions.remove(ctx)
@@ -333,7 +328,8 @@ class RPGCog(Cog):
         member = ctx.author
         member_id = str(member.id)
 
-        if member_id in self.members:
+        char = self.session.query(Member).filter_by(member_id=member_id).first()
+        if char:
             await ctx.send("{}, вы уверены, что хотите удалить своего персонажа?\n"
                            "\n"
                            "ВНИМАНИЕ: Это действие нельзя отменить. Все ваши предметы, уровень и достижения будут "
@@ -345,7 +341,8 @@ class RPGCog(Cog):
                 await ctx.send("{}, удаление персонажа отменено.".format(member.mention))
                 return
             if msg.content.lower() in ["да", "д", "yes", "y"]:
-                await self.delete_member(member_id)
+                self.session.query(Member).filter_by(member_id=member_id).delete()
+                self.session.commit()
                 await ctx.send("{}, ваш персонаж удален. "
                                "Введите '{}char new', чтобы создать нового.".format(member.mention, ctx.prefix))
             else:
