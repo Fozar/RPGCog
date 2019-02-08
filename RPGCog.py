@@ -189,7 +189,7 @@ class RPGCog(Cog):
                                "Повторите попытку.\n"
                                "Для отмены введите \"отмена\".".format(member.mention))
                 return await name_select()
-            elif re.match('^[a-zа-яA-ZА-ЯёЁ][a-zA-Zа-яА-Яё \'-]+$', name.content):
+            elif not re.match("^[a-zа-яA-ZА-ЯёЁ][a-zA-Zа-яА-ЯёЁ '-]+$", name.content):
                 await ctx.send("{}, введены недопустимые символы. Повторите попытку.\n"
                                "Для отмена введите \"отмена\".".format(member.mention))
                 return await name_select()
@@ -294,6 +294,10 @@ class RPGCog(Cog):
                 await ctx.send("{}, в описании персонажа должно быть не менее 50 и не более 1000 символов. "
                                "Повторите попытку.\n"
                                "Для отмены введите \"отмена\".".format(member.mention))
+                return await desc_select()
+            elif not re.match("""^[a-zа-яA-ZА-ЯёЁ][a-zA-Zа-яА-ЯёЁ !?:;"'.,-]+$""", description.content):
+                await ctx.send("{}, введены недопустимые символы. Повторите попытку.\n"
+                               "Для отмена введите \"отмена\".".format(member.mention))
                 return await desc_select()
             else:
                 return description.content
