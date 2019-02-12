@@ -5,6 +5,7 @@ from typing import Union
 
 from mongoengine import *
 import discord
+from redbot.core import checks
 from redbot.core.bot import Red
 from redbot.core.commands import commands
 from redbot.core.utils.predicates import MessagePredicate
@@ -17,18 +18,19 @@ class Inventory(EmbeddedDocument):
 
     items = ListField(DictField())
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, items, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.items = []  # Список предметов
+        self.items = items  # Список предметов
 
     # Добавление предмета в инвентарь
     def add_item(self, item, count):
-        existing_item = next((item for item in self.items if item["item_id"] == item.id), False)
+        existing_item = next((_item for _item in self.items if _item["item_id"] == item.item_id), False)
         _count = count
         if existing_item:
-            _count += existing_item.count
-        _item = {'item_id': item.id, 'count': _count}
-        self.items.append(_item)
+            existing_item["count"] += _count
+        else:
+            _item = {'item_id': item.id, 'count': _count}
+            self.items.append(_item)
 
 
 class Member(Document):
@@ -60,11 +62,19 @@ class Item(Document):
 
     item_id = IntField(primary_key=True)
     name = StringField()
+    description = StringField()
+    price = IntField()
+    rarity = StringField()
+    loot = BooleanField()
 
-    def __init__(self, item_id, name, *args, **values):
+    def __init__(self, item_id, name, description, price, rarity, loot, *args, **values):
         super().__init__(*args, **values)
         self.item_id = item_id  # ID предмета
         self.name = name  # Название предмета
+        self.description = description  # Описание предмета
+        self.price = price  # Цена предмета
+        self.rarity = rarity  # Редкость предмета
+        self.loot = loot  # Может ли предмет найден в луте
 
 
 """
@@ -111,21 +121,107 @@ class RPGCog(Cog):
 
         print("RPGCog загружен")
 
-    @commands.group()
-    async def item(self, ctx):
-        """ Операции над предметами """
+    @commands.command(name="inventory", aliases=["inv"])
+    async def inventory(self, ctx, member: Union[discord.Member, discord.User] = None):
+        """ Инвентарь персонажа """
 
+        author = ctx.author
+        if member is None:
+            member = author
+        member_id = str(member.id)
+
+        char = self.MemberClass.objects(member_id=member_id).first()
+        embed = discord.Embed(title="Инвентарь", colour=discord.Colour(0x8b572a),
+                              description="В скобках указано количество предметов.")
+
+        embed.set_author(name="Deep Requiem",
+                         icon_url="https://cdn.discordapp.com/attachments/464105000554201088/544831961265471488"
+                                  "/design-skyrim-icon-11.jpeg")
+        embed.set_footer(text="Инвентарь персонажа")
+        for item in char.inventory.items:
+            count = item["count"]
+            _item = self.ItemClass.objects(item_id=item["item_id"]).first()
+            embed.add_field(name=f"{_item.name} ({count})", value=f"```autohotkey\nЦена: {_item.price}```", inline=True)
+
+        await ctx.send(embed=embed)
+
+    @commands.group(invoke_without_command=True)
+    async def item(self, ctx, *, item_name):
+        """ Информация о предмете """
+
+        if not item_name:
+            await ctx.send_help()
+            return
+
+        author = ctx.author
+        _items = self.ItemClass.objects(name=item_name)
+        if not _items:
+            await ctx.send("{}, предмет не найден.".format(author.mention))
+        elif len(_items) > 1:
+            await ctx.send("{}, найдено больше одного предмета с указанным именем. "
+                           "Сообщите об этом администратору.".format(author.mention))
+        else:
+            _item = _items.first()
+            if "редк" in _item.rarity.lower():
+                color = discord.Colour(0xa56b6)  # Цвет редкого предмета (синий)
+            elif "эпическ" in _item.rarity.lower():
+                color = discord.Colour(0x9013fe)  # Цвет эпического предмета (фиолетовый)
+            elif "леген" in _item.rarity.lower():
+                color = discord.Colour(0xffd700)  # Цвет легендарного предмета (золотой)
+            else:
+                color = discord.Colour(0xffffff)  # Цвет других предметов (белый)
+            embed = discord.Embed(title=f"{_item.name}", colour=color,
+                                  description=f"{_item.description}")
+
+            embed.set_author(name="Deep Requiem",
+                             icon_url="https://cdn.discordapp.com/attachments/464105000554201088/544831961265471488"
+                                      "/design-skyrim-icon-11.jpeg")
+            embed.set_footer(text="Информация о предмете")
+
+            embed.add_field(name="Стоимость", value=f"{_item.price}")
+
+            await ctx.send(embed=embed)
+
+    @checks.admin_or_permissions()
     @item.command(name="new", pass_context=True)
-    async def item_new(self, ctx, item_name):
+    async def item_new(self, ctx, item_name, description, price, rarity, loot):
         """ Добавить новый предмет """
 
         try:
             item_id = int(Item.objects.order_by('-_id').first().item_id) + 1
         except AttributeError:
             item_id = 1
-        new_item = self.ItemClass(item_id=item_id, name=item_name)
+        if loot.lower() in ['true', '1', 't', 'yes']:
+            _loot = True
+        else:
+            _loot = False
+        new_item = self.ItemClass(item_id=item_id, name=item_name, description=description,
+                                  price=price, rarity=rarity, loot=_loot)
         new_item.save()
         await ctx.send("{}, предмет создан!".format(ctx.author.mention))
+
+    @checks.admin_or_permissions()
+    @item.command(name="add", pass_context=True)
+    async def item_add(self, ctx, member: Union[discord.Member, discord.User] = None, count=1, *, item_name):
+        """ Выдать предмет персонажу """
+
+        author = ctx.author
+        if member is None:
+            member = author
+        member_id = str(member.id)
+        char = self.MemberClass.objects(member_id=member_id).first()
+
+        _items = self.ItemClass.objects(name=item_name)
+        if not _items:
+            await ctx.send("{}, предмет не найден.".format(author.mention))
+        elif len(_items) > 1:
+            await ctx.send("{}, найдено больше одного предмета с указанным именем. "
+                           "Сообщите об этом администратору.".format(author.mention))
+        else:
+            _item = _items.first()
+            char.inventory.add_item(_item, count)
+            char.save()
+            await ctx.send("{}, предмет(ы) добавлен(ы).".format(author.mention))
 
     @commands.group(invoke_without_command=True)
     async def char(self, ctx, member: Union[discord.Member, discord.User] = None):
@@ -138,7 +234,7 @@ class RPGCog(Cog):
         char = self.MemberClass.objects(member_id=member_id).first()
 
         if not char:
-            await ctx.send("{}, персонаж не найден.".format(ctx.author.mention))
+            await ctx.send("{}, персонаж не найден.".format(author.mention))
             await ctx.send_help()
         else:
             name = char.name
@@ -312,8 +408,7 @@ class RPGCog(Cog):
             return
 
         # Сохранение персонажа
-        inv = self.InventoryClass()
-        inv.add_item(self.ItemClass.objects(item_id=1).first(), 10)
+        inv = self.InventoryClass(items=[])
         char = self.MemberClass(member_id=member_id, name=name_c, race=race_c, sex=sex_c, description=description_c,
                                 lvl=1, xp=0, inventory=inv)
         char.save()
