@@ -1,60 +1,50 @@
 import asyncio
+import datetime
 import re
-from pathlib import Path
 from typing import Union
 
-import aiosqlite
+from mongoengine import *
 import discord
 from redbot.core.bot import Red
 from redbot.core.commands import commands
 from redbot.core.utils.predicates import MessagePredicate
-from sqlalchemy import create_engine, Column, Integer, String
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
 
 Cog = getattr(commands, "Cog", object)
 
-MAIN_DB = Path('C:\\Users\\fozar\\AppData\\Local\\Red-DiscordBot\\Red-DiscordBot\\cogs\\CogManager\\cogs\\RPGCog\\db'
-               '\\Main.db')
-engine = create_engine('sqlite:///C:\\Users\\fozar\\AppData\\Local\\Red-DiscordBot\\Red-DiscordBot\\cogs\\CogManager'
-                       '\\cogs\\RPGCog\\db\\Main.db')
 
-Base = declarative_base()
+class Inventory(EmbeddedDocument):
+    """ Класс инвентаря """
 
+    items = ListField(DictField())
 
-class Database:
-    """ Класс базы данных """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.items = []  # Список предметов
 
-    def __init__(self, file):
-        self.file = file
-
-    async def query(self, sql):
-        async with aiosqlite.connect(self.file) as db:
-            await db.execute(sql)
-            await db.commit()
-
-    async def fetch(self, sql):
-        async with aiosqlite.connect(self.file) as db:
-            cursor = await db.execute(sql)
-            rows = await cursor.fetchall()
-            await cursor.close()
-            return rows
+    # Добавление предмета в инвентарь
+    def add_item(self, item, count):
+        existing_item = next((item for item in self.items if item["item_id"] == item.id), False)
+        _count = count
+        if existing_item:
+            _count += existing_item.count
+        _item = {'item_id': item.id, 'count': _count}
+        self.items.append(_item)
 
 
-class Member(Base):
+class Member(Document):
     """ Класс персонажа """
 
-    __tablename__ = 'members'
-    id = Column(Integer, primary_key=True)
-    member_id = Column(String)
-    name = Column(String)
-    race = Column(String)
-    sex = Column(String)
-    description = Column(String)
-    lvl = Column(Integer)
-    xp = Column(Integer)
+    member_id = StringField(primary_key=True)
+    name = StringField(max_length=25)
+    race = StringField()
+    sex = StringField()
+    description = StringField(max_length=1000)
+    lvl = IntField(default=1)
+    xp = IntField(default=0)
+    inventory = EmbeddedDocumentField(Inventory)
 
-    def __init__(self, member_id, name, race, sex, description, lvl, xp):
+    def __init__(self, member_id, name, race, sex, description, lvl, xp, inventory, *args, **values):
+        super().__init__(*args, **values)
         self.member_id = member_id  # ID участника
         self.name = name  # Имя персонажа
         self.race = race  # Раса персонажа
@@ -62,37 +52,22 @@ class Member(Base):
         self.description = description  # Описание персонажа
         self.lvl = lvl  # Уровень персонажа
         self.xp = xp  # Опыт персонажа
-        # self.inventory = Inventory  # Инвентарь персонажа
+        self.inventory = inventory  # Инвентарь персонажа
+
+
+class Item(Document):
+    """ Класс предмета """
+
+    item_id = IntField(primary_key=True)
+    name = StringField()
+
+    def __init__(self, item_id, name, *args, **values):
+        super().__init__(*args, **values)
+        self.item_id = item_id  # ID предмета
+        self.name = name  # Название предмета
 
 
 """
-class Inventory:
-    
-
-    def __init__(self):
-        self.helmet = Armor  # Экипированный шлем
-        self.cuirass = Armor  # Экипированная броня
-        self.gauntlets = Armor  # Экипированные перчатки
-        self.boots = Armor  # Экипированные сапоги
-        self.weapon = Weapon  # Экипированное оружие
-        self.shield = Armor  # Экипированный щит
-        self.items = []  # Список предметов
-
-
-class Item:
-   
-
-    def __init__(self, name, description, price, rarity, loot, count, stolen, maker):
-        self.name = name  # Название предмета
-        self.description = description  # Описание предмета
-        self.price = price  # Цена предмета
-        self.rarity = rarity  # Редкость предмета
-        self.loot = loot  # Может ли предмет найден в луте
-        self.count = count  # Количество
-        self.stolen = stolen  # Украден ли предмет
-        self.maker = maker  # Создатель
-
-
 class Armor(Item):
     
 
@@ -119,14 +94,38 @@ class RPGCog(Cog):
     """ RPG Cog """
 
     def __init__(self, bot: Red):
-        self.main_db = Database(MAIN_DB)
         self.Red = bot
         self.MemberClass = Member
-        self.members = {}
+        self.InventoryClass = Inventory
+        self.ItemClass = Item
         self.CharSessions = []
-        session_m = sessionmaker(bind=engine)
-        self.session = session_m()
-        Base.metadata.create_all(engine)
+        bot.loop.create_task(self.setup())
+
+    async def setup(self):
+        await self.Red.wait_until_ready()
+
+        connect(db="rpg", host="127.0.0.1",
+                port=27017,
+                username="",
+                password="")
+
+        print("RPGCog загружен")
+
+    @commands.group()
+    async def item(self, ctx):
+        """ Операции над предметами """
+
+    @item.command(name="new", pass_context=True)
+    async def item_new(self, ctx, item_name):
+        """ Добавить новый предмет """
+
+        try:
+            item_id = int(Item.objects.order_by('-_id').first().item_id) + 1
+        except AttributeError:
+            item_id = 1
+        new_item = self.ItemClass(item_id=item_id, name=item_name)
+        new_item.save()
+        await ctx.send("{}, предмет создан!".format(ctx.author.mention))
 
     @commands.group(invoke_without_command=True)
     async def char(self, ctx, member: Union[discord.Member, discord.User] = None):
@@ -136,8 +135,12 @@ class RPGCog(Cog):
         if member is None:
             member = author
         member_id = str(member.id)
-        char = self.session.query(Member).filter_by(member_id=member_id).first()
-        if char:
+        char = self.MemberClass.objects(member_id=member_id).first()
+
+        if not char:
+            await ctx.send("{}, персонаж не найден.".format(ctx.author.mention))
+            await ctx.send_help()
+        else:
             name = char.name
             race = char.race
             sex = char.sex
@@ -146,7 +149,8 @@ class RPGCog(Cog):
             xp = char.xp
 
             embed = discord.Embed(title="{}".format(name), colour=discord.Colour(0xd0021b),
-                                  description="{}".format(desc))
+                                  description="{}".format(desc),
+                                  timestamp=datetime.datetime.utcfromtimestamp(1549457010))
 
             embed.set_footer(text="Информация о персонаже")
 
@@ -157,9 +161,6 @@ class RPGCog(Cog):
                                   "**Опыт:**           {}".format(race, sex, lvl, xp))
 
             await ctx.send(embed=embed)
-        else:
-            await ctx.send("{}, персонаж не найден.".format(ctx.author.mention))
-            await ctx.send_help()
 
     @char.command(name="new")
     async def char_new(self, ctx):
@@ -173,8 +174,7 @@ class RPGCog(Cog):
             return
 
         # Проверка регистрации
-        char = self.session.query(Member).filter_by(member_id=member_id).first()
-        if char:
+        if self.MemberClass.objects(member_id=member_id):
             await ctx.send("{}, у вас уже есть персонаж. "
                            "Введите {}char delete, чтобы удалить его.".format(member.mention, ctx.prefix))
             return
@@ -312,10 +312,11 @@ class RPGCog(Cog):
             return
 
         # Сохранение персонажа
-        member_c = self.MemberClass(member_id=member_id, name=name_c, race=race_c, sex=sex_c, description=description_c,
-                                    lvl=1, xp=0)
-        self.session.add(member_c)  # Занесение персонажа в базу данных
-        self.session.commit()
+        inv = self.InventoryClass()
+        inv.add_item(self.ItemClass.objects(item_id=1).first(), 10)
+        char = self.MemberClass(member_id=member_id, name=name_c, race=race_c, sex=sex_c, description=description_c,
+                                lvl=1, xp=0, inventory=inv)
+        char.save()
         await ctx.send("{}, ваш персонаж {} создан!".format(member.mention, name_c))
         if ctx in self.CharSessions:
             self.CharSessions.remove(ctx)
@@ -328,8 +329,10 @@ class RPGCog(Cog):
         member = ctx.author
         member_id = str(member.id)
 
-        char = self.session.query(Member).filter_by(member_id=member_id).first()
-        if char:
+        if not self.MemberClass.objects(member_id=member_id):
+            await ctx.send("{}, у вас нет персонажа. "
+                           "Введите '{}char new', чтобы создать".format(member.mention, ctx.prefix))
+        else:
             await ctx.send("{}, вы уверены, что хотите удалить своего персонажа?\n"
                            "\n"
                            "ВНИМАНИЕ: Это действие нельзя отменить. Все ваши предметы, уровень и достижения будут "
@@ -341,12 +344,8 @@ class RPGCog(Cog):
                 await ctx.send("{}, удаление персонажа отменено.".format(member.mention))
                 return
             if msg.content.lower() in ["да", "д", "yes", "y"]:
-                self.session.query(Member).filter_by(member_id=member_id).delete()
-                self.session.commit()
+                self.MemberClass.objects(member_id=member_id).delete()
                 await ctx.send("{}, ваш персонаж удален. "
                                "Введите '{}char new', чтобы создать нового.".format(member.mention, ctx.prefix))
             else:
                 await ctx.send("{}, удаление персонажа отменено.".format(member.mention))
-        else:
-            await ctx.send("{}, у вас нет персонажа. "
-                           "Введите '{}char new', чтобы создать".format(member.mention, ctx.prefix))
