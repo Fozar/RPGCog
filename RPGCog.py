@@ -1,5 +1,4 @@
 import asyncio
-import datetime
 import re
 from typing import Union
 
@@ -25,12 +24,22 @@ class Inventory(EmbeddedDocument):
     # Добавление предмета в инвентарь
     def add_item(self, item, count):
         existing_item = next((_item for _item in self.items if _item["item_id"] == item.item_id), False)
-        _count = count
         if existing_item:
-            existing_item["count"] += _count
+            existing_item["count"] += count
         else:
-            _item = {'item_id': item.id, 'count': _count}
+            _item = {'item_id': item.id, 'count': count}
             self.items.append(_item)
+        self.items[:] = [item for item in self.items if item.get('count') > 0]
+
+    # Удаление предмета из инвентаря
+    def remove_item(self, item, count):
+        existing_item = next((_item for _item in self.items if _item["item_id"] == item.item_id), False)
+        if existing_item:
+            existing_item["count"] -= count
+            self.items[:] = [item for item in self.items if item.get('count') > 0]
+            if len(self.items) < 1:
+                _item = {'item_id': "", 'count': 0}
+                self.items.append(_item)
 
 
 class Member(Document):
@@ -131,7 +140,7 @@ class RPGCog(Cog):
         member_id = str(member.id)
 
         char = self.MemberClass.objects(member_id=member_id).first()
-        embed = discord.Embed(title="Инвентарь", colour=discord.Colour(0x8b572a),
+        embed = discord.Embed(title=f"Инвентарь персонажа {char.name}", colour=discord.Colour(0x8b572a),
                               description="В скобках указано количество предметов.")
 
         embed.set_author(name="Deep Requiem",
@@ -140,9 +149,12 @@ class RPGCog(Cog):
         embed.set_footer(text="Инвентарь персонажа")
         for item in char.inventory.items:
             count = item["count"]
-            _item = self.ItemClass.objects(item_id=item["item_id"]).first()
-            embed.add_field(name=f"{_item.name} ({count})", value=f"```autohotkey\nЦена: {_item.price}```", inline=True)
-
+            if count > 0:
+                _item = self.ItemClass.objects(item_id=item["item_id"]).first()
+                embed.add_field(name=f"{_item.name} ({count})",
+                                value=f"```autohotkey\nРедкость: {_item.rarity}\nЦена: {_item.price}```", inline=True)
+            else:
+                embed.description = "Инвентарь пуст."
         await ctx.send(embed=embed)
 
     @commands.group(invoke_without_command=True)
@@ -177,8 +189,8 @@ class RPGCog(Cog):
                              icon_url="https://cdn.discordapp.com/attachments/464105000554201088/544831961265471488"
                                       "/design-skyrim-icon-11.jpeg")
             embed.set_footer(text="Информация о предмете")
-
-            embed.add_field(name="Стоимость", value=f"{_item.price}")
+            embed.add_field(name="Редкость", value=f"{_item.rarity}", inline=True)
+            embed.add_field(name="Стоимость", value=f"{_item.price}", inline=True)
 
             await ctx.send(embed=embed)
 
@@ -223,6 +235,35 @@ class RPGCog(Cog):
             char.save()
             await ctx.send("{}, предмет(ы) добавлен(ы).".format(author.mention))
 
+    @checks.admin_or_permissions()
+    @item.command(name="remove", pass_context=True)
+    async def item_remove(self, ctx, member: Union[discord.Member, discord.User] = None, count=1, *, item_name):
+        """ Удалить предмет у персонажа """
+
+        author = ctx.author
+        if member is None:
+            member = author
+        member_id = str(member.id)
+        char = self.MemberClass.objects(member_id=member_id).first()
+
+        _items = self.ItemClass.objects(name=item_name)
+
+        if not _items:
+            await ctx.send("{}, предмет не найден.".format(author.mention))
+            return
+        elif len(_items) > 1:
+            await ctx.send("{}, найдено больше одного предмета с указанным именем. "
+                           "Сообщите об этом администратору.".format(author.mention))
+        else:
+            _item = _items.first()
+            char.inventory.remove_item(_item, count)
+            char.save()
+            if len(char.inventory.items) < 1:
+                inv = self.InventoryClass(items=[])
+                char.inventory = inv
+                char.save()
+            await ctx.send("{}, предмет(ы) удален(ы).".format(author.mention))
+
     @commands.group(invoke_without_command=True)
     async def char(self, ctx, member: Union[discord.Member, discord.User] = None):
         """ Информация о персонаже """
@@ -244,10 +285,11 @@ class RPGCog(Cog):
             lvl = char.lvl
             xp = char.xp
 
-            embed = discord.Embed(title="{}".format(name), colour=discord.Colour(0xd0021b),
-                                  description="{}".format(desc),
-                                  timestamp=datetime.datetime.utcfromtimestamp(1549457010))
-
+            embed = discord.Embed(title="{}".format(name), colour=discord.Colour(0xf5a623),
+                                  description="{}".format(desc))
+            embed.set_author(name="Deep Requiem",
+                             icon_url="https://cdn.discordapp.com/attachments/464105000554201088/544831961265471488"
+                                      "/design-skyrim-icon-11.jpeg")
             embed.set_footer(text="Информация о персонаже")
 
             embed.add_field(name="Характеристики",
