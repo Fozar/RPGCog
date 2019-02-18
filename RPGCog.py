@@ -1,5 +1,6 @@
 import asyncio
 import re
+from operator import itemgetter
 from typing import Union
 
 from mongoengine import *
@@ -22,12 +23,12 @@ class Inventory(EmbeddedDocument):
         self.items = items  # Список предметов
 
     # Добавление предмета в инвентарь
-    def add_item(self, item, count):
+    def add_item(self, item, item_type, count):
         existing_item = next((_item for _item in self.items if _item["item_id"] == item.item_id), False)
         if existing_item:
             existing_item["count"] += count
         else:
-            _item = {'item_id': item.id, 'count': count}
+            _item = {'item_id': item.id, 'item_type': item_type, 'count': count}
             self.items.append(_item)
         self.items[:] = [item for item in self.items if item.get('count') > 0]
 
@@ -85,28 +86,68 @@ class Item(Document):
         self.rarity = rarity  # Редкость предмета
         self.loot = loot  # Может ли предмет найден в луте
 
+    meta = {'allow_inheritance': True}
 
-"""
+
 class Armor(Item):
-    
+    """ Класс брони """
 
-    def __init__(self, slot, kind, armor, name, description, price, rarity, loot, count, stolen, maker):
-        super().__init__(name, description, price, rarity, loot, count, stolen, maker)
+    armor_kinds = (('heavy', 'Тяжелая броня'), ('light', 'Легкая броня'), ('clothing', 'Одежда'))
+    slots = (('helmet', 'Шлем'), ('cuirass', 'Броня'), ('boots', 'сапоги'), ('gauntlets', 'перчатки'))
+
+    slot = StringField()
+    kind = StringField()
+    armor = IntField()
+
+    def __init__(self, slot, kind, armor, item_id, name, description, price, rarity, loot, *args, **values):
+        super().__init__(item_id, name, description, price, rarity, loot, *args, **values)
         self.slot = slot  # Слот брони (шлем/кираса/сапоги/перчатки)
         self.kind = kind  # Легкая/тяжелая/тряпки
         self.armor = armor  # Класс брони
 
 
 class Weapon(Item):
-    
+    """ Класс оружия """
 
-    def __init__(self, melee, hands, type, damage, name, description, price, rarity, loot, count, stolen, maker):
-        super().__init__(name, description, price, rarity, loot, count, stolen, maker)
+    weapon_types = (('crossbow', 'Арбалет'), ('bow', 'Лук'), ('greatsword', 'Двуручный меч'), ('battleaxe', 'Секира'),
+                    ('warhammer', 'Боевой молот'), ('sword', 'Меч'), ('war_axe', 'Боевой топор'), ('mace', 'Булава'),
+                    ('dagger', 'Кинжал'))
+
+    melee = BooleanField()
+    hands = IntField()
+    weapon_type = StringField(choices=weapon_types)
+    damage = IntField()
+
+    def __init__(self, melee, hands, weapon_type, damage, item_id, name, description, price, rarity, loot, *args,
+                 **values):
+        super().__init__(item_id, name, description, price, rarity, loot, *args, **values)
         self.melee = melee  # Ближний или дальний бой
         self.hands = hands  # Сколько рук занимает
-        self.type = type  # Тип оружия
+        self.weapon_type = weapon_type  # Тип оружия
         self.damage = damage  # Урон
-"""
+
+
+def is_item_type(items, type=None):
+    if type:
+        _type = f".{type}"
+    else:
+        _type = ""
+    try:
+        _item = items.get(_cls=f"Item{_type.title()}")
+        return True
+    except DoesNotExist:
+        return False
+
+
+def get_item_type(items):
+    if is_item_type(items, "weapon"):
+        return "weapon"
+    elif is_item_type(items, "armor"):
+        return "armor"
+    elif is_item_type(items):
+        return "item"
+    else:
+        raise ItemTypeNotFound(Exception)
 
 
 class RPGCog(Cog):
@@ -117,6 +158,8 @@ class RPGCog(Cog):
         self.MemberClass = Member
         self.InventoryClass = Inventory
         self.ItemClass = Item
+        self.ArmorClass = Armor
+        self.WeaponClass = Weapon
         self.CharSessions = []
         bot.loop.create_task(self.setup())
 
@@ -140,21 +183,61 @@ class RPGCog(Cog):
         member_id = str(member.id)
 
         char = self.MemberClass.objects(member_id=member_id).first()
-        embed = discord.Embed(title=f"Инвентарь персонажа {char.name}", colour=discord.Colour(0x8b572a),
-                              description="В скобках указано количество предметов.")
+        if not char:
+            await ctx.send("{}, персонаж не найден.".format(author.mention))
+            return
+
+        embed = discord.Embed(title=f"Инвентарь персонажа {char.name}", colour=discord.Colour(0x8b572a))
 
         embed.set_author(name="Deep Requiem",
                          icon_url="https://cdn.discordapp.com/attachments/464105000554201088/544831961265471488"
                                   "/design-skyrim-icon-11.jpeg")
         embed.set_footer(text="Инвентарь персонажа")
+
+        async def empty_inventory():
+            embed.description = "Инвентарь пуст."
+            await ctx.send(embed=embed)
+
+        if not char.inventory.items:
+            await empty_inventory()
+            return
+
+        weapon_values = []
+        item_values = []
         for item in char.inventory.items:
             count = item["count"]
-            if count > 0:
+            if item and count > 0:
                 _item = self.ItemClass.objects(item_id=item["item_id"]).first()
-                embed.add_field(name=f"{_item.name} ({count})",
-                                value=f"```autohotkey\nРедкость: {_item.rarity}\nЦена: {_item.price}```", inline=True)
+                _stat = {'name': _item.name, 'count': count, 'rarity': _item.rarity, 'price': _item.price}
+                if item["item_type"] == "weapon":
+                    _stat['damage'] = _item.damage
+                    weapon_values.append(_stat)
+                else:
+                    item_values.append(_stat)
             else:
-                embed.description = "Инвентарь пуст."
+                await empty_inventory()
+                return
+        weapon_values[:] = sorted(weapon_values, key=itemgetter('name'))
+        item_values[:] = sorted(item_values, key=itemgetter('name'))
+
+        def add_category(_embed, _category_name, _values):
+            if not _values:
+                return
+            _embed.add_field(name="==========================================================",
+                             value=f"**```fix\n[{_category_name}] ({len(_values)})\n```**", inline=False)
+            for _value in _values:
+                text = "```autohotkey\n"
+                if 'rarity' in _value:
+                    text += f"Редкость: {_value['rarity']}\n"
+                if 'damage' in _value:
+                    text += f"Урон: {_value['damage']}\n"
+                if 'price' in _value:
+                    text += f"Цена: {_value['price']}\n"
+                text += "```"
+                embed.add_field(name=f"{_value['name']} ({_value['count']})", value=text, inline=True)
+
+        add_category(embed, "ОРУЖИЕ", weapon_values)
+        add_category(embed, "ДРУГОЕ", item_values)
         await ctx.send(embed=embed)
 
     @commands.group(invoke_without_command=True)
@@ -173,6 +256,7 @@ class RPGCog(Cog):
             await ctx.send("{}, найдено больше одного предмета с указанным именем. "
                            "Сообщите об этом администратору.".format(author.mention))
         else:
+            item_type = get_item_type(_items)
             _item = _items.first()
             if "редк" in _item.rarity.lower():
                 color = discord.Colour(0xa56b6)  # Цвет редкого предмета (синий)
@@ -181,26 +265,28 @@ class RPGCog(Cog):
             elif "леген" in _item.rarity.lower():
                 color = discord.Colour(0xffd700)  # Цвет легендарного предмета (золотой)
             else:
-                color = discord.Colour(0xffffff)  # Цвет других предметов (белый)
+                color = discord.Colour(0xffffff)  # Цвет обычных предметов (белый)
             embed = discord.Embed(title=f"{_item.name}", colour=color,
-                                  description=f"{_item.description}")
+                                  description=f"*{_item.description}*")
 
             embed.set_author(name="Deep Requiem",
                              icon_url="https://cdn.discordapp.com/attachments/464105000554201088/544831961265471488"
                                       "/design-skyrim-icon-11.jpeg")
             embed.set_footer(text="Информация о предмете")
             embed.add_field(name="Редкость", value=f"{_item.rarity}", inline=True)
+            if item_type == "weapon":
+                embed.add_field(name="Урон", value=f"{_item.damage}", inline=True)
             embed.add_field(name="Стоимость", value=f"{_item.price}", inline=True)
 
             await ctx.send(embed=embed)
 
     @checks.admin_or_permissions()
-    @item.command(name="new", pass_context=True)
+    @item.group(name="new", invoke_without_command=True)
     async def item_new(self, ctx, item_name, description, price, rarity, loot):
         """ Добавить новый предмет """
 
         try:
-            item_id = int(Item.objects.order_by('-_id').first().item_id) + 1
+            item_id = int(self.ItemClass.objects.order_by('-_id').first().item_id) + 1
         except AttributeError:
             item_id = 1
         if loot.lower() in ['true', '1', 't', 'yes']:
@@ -209,6 +295,31 @@ class RPGCog(Cog):
             _loot = False
         new_item = self.ItemClass(item_id=item_id, name=item_name, description=description,
                                   price=price, rarity=rarity, loot=_loot)
+        new_item.save()
+        await ctx.send("{}, предмет создан!".format(ctx.author.mention))
+
+    @item_new.command(name="weapon")
+    async def item_new_weapon(self, ctx, item_name, description, price, rarity, loot, melee, hands, type, damage):
+        """ Добавить новое оружие """
+
+        def str_to_bool(s):
+            if s.lower() in ['true', '1', 't', 'yes', 'да', 'истина']:
+                return True
+            elif s.lower() in ['false', '0', 'f', 'no', 'нет', 'ложь']:
+                return False
+            else:
+                raise ValueError
+
+        try:
+            item_id = int(self.ItemClass.objects.order_by('-_id').first().item_id) + 1
+        except AttributeError:
+            item_id = 1
+        _loot = str_to_bool(loot)
+        _melee = str_to_bool(melee)
+
+        new_item = self.WeaponClass(item_id=item_id, name=item_name, description=description, price=price,
+                                    rarity=rarity, loot=_loot, melee=_melee, hands=hands, weapon_type=type,
+                                    damage=damage)
         new_item.save()
         await ctx.send("{}, предмет создан!".format(ctx.author.mention))
 
@@ -230,8 +341,9 @@ class RPGCog(Cog):
             await ctx.send("{}, найдено больше одного предмета с указанным именем. "
                            "Сообщите об этом администратору.".format(author.mention))
         else:
+            item_type = get_item_type(_items)
             _item = _items.first()
-            char.inventory.add_item(_item, count)
+            char.inventory.add_item(_item, item_type, count)
             char.save()
             await ctx.send("{}, предмет(ы) добавлен(ы).".format(author.mention))
 
@@ -435,7 +547,7 @@ class RPGCog(Cog):
                                "Повторите попытку.\n"
                                "Для отмены введите \"отмена\".".format(member.mention))
                 return await desc_select()
-            elif not re.match("""^[a-zа-яA-ZА-ЯёЁ][a-zA-Zа-яА-ЯёЁ !?:;"'.,-]+$""", description.content):
+            elif not re.match("""^[a-zа-яA-ZА-ЯёЁ\d][a-zA-Zа-яА-ЯёЁ\d !?:;"'.,-]+$""", description.content):
                 await ctx.send("{}, введены недопустимые символы. Повторите попытку.\n"
                                "Для отмена введите \"отмена\".".format(member.mention))
                 return await desc_select()
@@ -466,7 +578,7 @@ class RPGCog(Cog):
         member = ctx.author
         member_id = str(member.id)
 
-        if not self.MemberClass.objects(member_id=member_id):
+        if not self.is_char_exists(member_id):
             await ctx.send("{}, у вас нет персонажа. "
                            "Введите '{}char new', чтобы создать".format(member.mention, ctx.prefix))
         else:
@@ -486,3 +598,13 @@ class RPGCog(Cog):
                                "Введите '{}char new', чтобы создать нового.".format(member.mention, ctx.prefix))
             else:
                 await ctx.send("{}, удаление персонажа отменено.".format(member.mention))
+
+    def is_char_exists(self, member_id):
+        if self.MemberClass.objects(member_id=member_id):
+            return True
+        else:
+            return False
+
+
+class ItemTypeNotFound(Exception):
+    pass
