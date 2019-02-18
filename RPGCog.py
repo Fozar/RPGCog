@@ -10,6 +10,8 @@ from redbot.core.bot import Red
 from redbot.core.commands import commands
 from redbot.core.utils.predicates import MessagePredicate
 
+from .config import config
+
 Cog = getattr(commands, "Cog", object)
 
 
@@ -133,8 +135,8 @@ def is_item_type(items, type=None):
     else:
         _type = ""
     try:
-        _item = items.get(_cls=f"Item{_type.title()}")
-        return True
+        if items.get(_cls=f"Item{_type.title()}"):
+            return True
     except DoesNotExist:
         return False
 
@@ -166,10 +168,10 @@ class RPGCog(Cog):
     async def setup(self):
         await self.Red.wait_until_ready()
 
-        connect(db="rpg", host="127.0.0.1",
-                port=27017,
-                username="",
-                password="")
+        connect(db=config.database.db, host=config.database.host,
+                port=config.database.port,
+                username=config.database.db,
+                password=config.database.password)
 
         print("RPGCog загружен")
 
@@ -542,7 +544,7 @@ class RPGCog(Cog):
             description = await self.Red.wait_for("message", check=MessagePredicate.same_context(ctx))
             if description.content.lower() == "отмена":
                 return description.content
-            elif len(description.content) < 50 or len(description.content) > 1000:
+            if len(description.content) < 50 or len(description.content) > 1000:
                 await ctx.send("{}, в описании персонажа должно быть не менее 50 и не более 1000 символов. "
                                "Повторите попытку.\n"
                                "Для отмены введите \"отмена\".".format(member.mention))
