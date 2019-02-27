@@ -1,6 +1,10 @@
+# config.yml
 database:
   host: "127.0.0.1"
   port: 27017
   user: ""
   password: ""
   db: "rpg"
+bot:
+  name: "Deep Requiem"
+  icon_url: "https://cdn.discordapp.com/attachments/464105000554201088/544831961265471488/design-skyrim-icon-11.jpeg"
