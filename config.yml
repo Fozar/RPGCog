@@ -5,6 +5,79 @@ database:
   user: ""
   password: ""
   db: "rpg"
+
 bot:
   name: "Deep Requiem"
   icon_url: "https://pp.userapi.com/c844418/v844418281/1b87d4/1Ad2a7zIVZ0.jpg"
+
+race_attrs:
+  argonian:
+    max_health: 105
+    max_magicka: 90
+    max_stamina: 120
+    health_regen: 1.0
+    magicka_regen: 1.1
+    stamina_regen: 1.6
+  breton:
+    max_health: 90
+    max_magicka: 120
+    max_stamina: 90
+    health_regen: 0
+    magicka_regen: 1.3
+    stamina_regen: 1.5
+  dunmer:
+    max_health: 100
+    max_magicka: 100
+    max_stamina: 100
+    health_regen: 0
+    magicka_regen: 1.25
+    stamina_regen: 1.6
+  altmer:
+    max_health: 90
+    max_magicka: 130
+    max_stamina: 80
+    health_regen: 0
+    magicka_regen: 2.0
+    stamina_regen: 1.5
+  imperial:
+    max_health: 110
+    max_magicka: 100
+    max_stamina: 110
+    health_regen: 0
+    magicka_regen: 1.1
+    stamina_regen: 1.5
+  khajit:
+    max_health: 90
+    max_magicka: 90
+    max_stamina: 120
+    health_regen: 0
+    magicka_regen: 1.0
+    stamina_regen: 1.65
+  nord:
+    max_health: 120
+    max_magicka: 80
+    max_stamina: 120
+    health_regen: 0
+    magicka_regen: 1.05
+    stamina_regen: 1.65
+  orc:
+    max_health: 130
+    max_magicka: 60
+    max_stamina: 110
+    health_regen: 0
+    magicka_regen: 1.0
+    stamina_regen: 1.7
+  redguard:
+    max_health: 110
+    max_magicka: 70
+    max_stamina: 120
+    health_regen: 0
+    magicka_regen: 1.0
+    stamina_regen: 1.65
+  bosmer:
+    max_health: 90
+    max_magicka: 110
+    max_stamina: 120
+    health_regen: 0
+    magicka_regen: 1.05
+    stamina_regen: 1.65
