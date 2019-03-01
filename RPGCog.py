@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import re
 from operator import itemgetter
 from typing import Union
@@ -80,16 +81,14 @@ class Item(Document):
     description = StringField()
     price = IntField()
     rarity = StringField()
-    loot = BooleanField()
 
-    def __init__(self, item_id, name, description, price, rarity, loot, *args, **values):
+    def __init__(self, item_id, name, description, price, rarity, *args, **values):
         super().__init__(*args, **values)
         self.item_id = item_id  # ID предмета
         self.name = name  # Название предмета
         self.description = description  # Описание предмета
         self.price = price  # Цена предмета
         self.rarity = rarity  # Редкость предмета
-        self.loot = loot  # Может ли предмет найден в луте
 
     meta = {'allow_inheritance': True}
 
@@ -104,8 +103,8 @@ class Armor(Item):
     kind = StringField()
     armor = IntField()
 
-    def __init__(self, slot, kind, armor, item_id, name, description, price, rarity, loot, *args, **values):
-        super().__init__(item_id, name, description, price, rarity, loot, *args, **values)
+    def __init__(self, item_id, name, description, price, rarity, slot=None, kind=None, armor=0, *args, **values):
+        super().__init__(item_id, name, description, price, rarity, *args, **values)
         self.slot = slot  # Слот брони (шлем/кираса/сапоги/перчатки)
         self.kind = kind  # Легкая/тяжелая/тряпки
         self.armor = armor  # Класс брони
@@ -114,19 +113,20 @@ class Armor(Item):
 class Weapon(Item):
     """ Класс оружия """
 
+    attack_types = (('melee', 'Ближний бой'), ('range', 'Дальний бой'))
     weapon_types = (('crossbow', 'Арбалет'), ('bow', 'Лук'), ('greatsword', 'Двуручный меч'), ('battleaxe', 'Секира'),
                     ('warhammer', 'Боевой молот'), ('sword', 'Меч'), ('war_axe', 'Боевой топор'), ('mace', 'Булава'),
                     ('dagger', 'Кинжал'))
 
-    melee = BooleanField()
+    attack_type = StringField(choices=attack_types)
     hands = IntField()
     weapon_type = StringField(choices=weapon_types)
     damage = IntField()
 
-    def __init__(self, melee, hands, weapon_type, damage, item_id, name, description, price, rarity, loot, *args,
-                 **values):
-        super().__init__(item_id, name, description, price, rarity, loot, *args, **values)
-        self.melee = melee  # Ближний или дальний бой
+    def __init__(self, item_id, name, description, price, rarity, attack_type=None, hands=0, weapon_type=None,
+                 damage=0, *args, **values):
+        super().__init__(item_id, name, description, price, rarity, *args, **values)
+        self.attack_type = attack_type  # Тип атаки
         self.hands = hands  # Сколько рук занимает
         self.weapon_type = weapon_type  # Тип оружия
         self.damage = damage  # Урон
@@ -250,8 +250,8 @@ class RPGCog(Cog):
             await ctx.send(embed=embed)
 
     @checks.admin_or_permissions()
-    @item.group(name="new", invoke_without_command=True)
-    async def item_new(self, ctx, item_type, item_name, description, price, rarity, loot, *args):
+    @item.command(name="new", invoke_without_command=True)
+    async def item_new(self, ctx, item_type, item_name, description, price, rarity, *args):
         """ Добавить новый предмет
 
         **- item_type:** Тип предмета. Возможные значения: item/weapon/armor
@@ -259,10 +259,9 @@ class RPGCog(Cog):
         **- description:** Описание предмета
         **- price:** Стоимость предмета
         **- rarity:** Редкость предмета
-        **- loot:** Может ли предмет найден в луте
         **- args:** Дополнительные аргументы для разных типов предметов.
             **-- Оружие:**
-                **--- melee:** Ближний бой?
+                **--- attack_type:** Тип атаки
                 **--- hands:** Количество рук
                 **--- type:** Тип оружия
                 **--- damage:** Наносимый урон
@@ -272,35 +271,18 @@ class RPGCog(Cog):
                 **--- armor:** Класс брони
         """
 
-        def str_to_bool(s):
-            if s.lower() in ['true', '1', 't', 'yes', 'да', 'истина']:
-                return True
-            elif s.lower() in ['false', '0', 'f', 'no', 'нет', 'ложь']:
-                return False
-            else:
-                raise ValueError
-
         try:
             item_id = int(self.ItemClass.objects.order_by('-_id').first().item_id) + 1
         except AttributeError:
             item_id = 1
 
-        _loot = str_to_bool(loot)
+        new_item = globals()[item_type.title()](item_id=item_id, name=item_name, description=description, price=price,
+                                                rarity=rarity)
+        signature = list(inspect.getfullargspec(new_item.__init__).args)
+        if args:
+            for arg, value in zip(signature[len(signature) - len(args):], list(args)):
+                setattr(new_item, arg, value)
 
-        setattr(self, )
-
-        if item_type == "weapon":
-            _melee = str_to_bool(args[0])
-            new_item = self.WeaponClass(item_id=item_id, name=item_name, description=description, price=price,
-                                        rarity=rarity, loot=_loot, melee=_melee, hands=args[1], weapon_type=args[2],
-                                        damage=args[3])
-        elif item_type == "armor":
-            new_item = self.ArmorClass(item_id=item_id, name=item_name, description=description,
-                                       price=price, rarity=rarity, loot=_loot, slot=args[0], kind=args[1],
-                                       armor=args[2])
-        else:
-            new_item = self.ItemClass(item_id=item_id, name=item_name, description=description,
-                                      price=price, rarity=rarity, loot=_loot)
         new_item.save()
         await ctx.send("{}, предмет создан!".format(ctx.author.mention))
 
@@ -584,5 +566,10 @@ class RPGCog(Cog):
             return False
 
 
-class ItemTypeNotFound(Exception):
-    pass
+def str_to_bool(s):
+    if s.lower() in ['true', '1', 't', 'yes', 'да', 'истина']:
+        return True
+    elif s.lower() in ['false', '0', 'f', 'no', 'нет', 'ложь']:
+        return False
+    else:
+        return ValueError
