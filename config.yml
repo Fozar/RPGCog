@@ -12,72 +12,182 @@ bot:
 
 race_attrs:
   argonian:
-    max_health: 105
-    max_magicka: 90
-    max_stamina: 120
-    health_regen: 1.0
-    magicka_regen: 1.1
-    stamina_regen: 1.6
+    main:
+      health_max: 105
+      magicka_max: 90
+      stamina_max: 120
+      health_regen: 0.0
+      magicka_regen: 1.1
+      stamina_regen: 1.6
+      health_buff: 0
+      stamina_buff: 0
+      magicka_buff: 0
+    resists:
+      magic_resist: 1.0
+      fire_resist: 1.0
+      frost_resist: 1.0
+      shock_resist: 1.0
+      poison_resist: 0.0
+      disease_resist: 0.25
   breton:
-    max_health: 90
-    max_magicka: 120
-    max_stamina: 90
-    health_regen: 0
-    magicka_regen: 1.3
-    stamina_regen: 1.5
+    main:
+      health_max: 90
+      magicka_max: 120
+      stamina_max: 90
+      health_regen: 0
+      magicka_regen: 1.3
+      stamina_regen: 1.5
+      health_buff: 0
+      stamina_buff: 0
+      magicka_buff: 0
+    resists:
+      magic_resist: 0.9
+      fire_resist: 1.0
+      frost_resist: 1.0
+      shock_resist: 1.0
+      poison_resist: 1.0
+      disease_resist: 1.0
   dunmer:
-    max_health: 100
-    max_magicka: 100
-    max_stamina: 100
-    health_regen: 0
-    magicka_regen: 1.25
-    stamina_regen: 1.6
+    main:
+      health_max: 100
+      magicka_max: 100
+      stamina_max: 100
+      health_regen: 0
+      magicka_regen: 1.25
+      stamina_regen: 1.6
+      health_buff: 0
+      stamina_buff: 0
+      magicka_buff: 0
+    resists:
+      magic_resist: 1.0
+      fire_resist: 0.5
+      frost_resist: 1.0
+      shock_resist: 1.0
+      poison_resist: 1.0
+      disease_resist: 1.0
   altmer:
-    max_health: 90
-    max_magicka: 130
-    max_stamina: 80
-    health_regen: 0
-    magicka_regen: 2.0
-    stamina_regen: 1.5
+    main:
+      health_max: 90
+      magicka_max: 130
+      stamina_max: 80
+      health_regen: 0
+      magicka_regen: 2.0
+      stamina_regen: 1.5
+      health_buff: 0
+      stamina_buff: 0
+      magicka_buff: 0
+    resists:
+      magic_resist: 1.2
+      fire_resist: 1.0
+      frost_resist: 1.0
+      shock_resist: 1.0
+      poison_resist: 1.0
+      disease_resist: 0.25
   imperial:
-    max_health: 110
-    max_magicka: 100
-    max_stamina: 110
-    health_regen: 0
-    magicka_regen: 1.1
-    stamina_regen: 1.5
+    main:
+      health_max: 110
+      magicka_max: 100
+      stamina_max: 110
+      health_regen: 0
+      magicka_regen: 1.1
+      stamina_regen: 1.5
+      health_buff: 0
+      stamina_buff: 0
+      magicka_buff: 0
+    resists:
+      magic_resist: 1.0
+      fire_resist: 1.0
+      frost_resist: 1.0
+      shock_resist: 1.0
+      poison_resist: 1.0
+      disease_resist: 1.0
   khajit:
-    max_health: 90
-    max_magicka: 90
-    max_stamina: 120
-    health_regen: 0
-    magicka_regen: 1.0
-    stamina_regen: 1.65
+    main:
+      health_max: 90
+      magicka_max: 90
+      stamina_max: 120
+      health_regen: 0
+      magicka_regen: 1.0
+      stamina_regen: 1.65
+      health_buff: 0
+      stamina_buff: 0
+      magicka_buff: 0
+    resists:
+      magic_resist: 1.0
+      fire_resist: 1.0
+      frost_resist: 1.0
+      shock_resist: 1.0
+      poison_resist: 1.0
+      disease_resist: 1.0
   nord:
-    max_health: 120
-    max_magicka: 80
-    max_stamina: 120
-    health_regen: 0
-    magicka_regen: 1.05
-    stamina_regen: 1.65
+    main:
+      health_max: 120
+      magicka_max: 80
+      stamina_max: 120
+      health_regen: 0
+      magicka_regen: 1.05
+      stamina_regen: 1.65
+      health_buff: 0
+      stamina_buff: 0
+      magicka_buff: 0
+    resists:
+      magic_resist: 1.0
+      fire_resist: 1.0
+      frost_resist: 0.65
+      shock_resist: 0.85
+      poison_resist: 1.0
+      disease_resist: 1.0
   orc:
-    max_health: 130
-    max_magicka: 60
-    max_stamina: 110
-    health_regen: 0
-    magicka_regen: 1.0
-    stamina_regen: 1.7
+    main:
+      health_max: 130
+      magicka_max: 60
+      stamina_max: 110
+      health_regen: 0
+      magicka_regen: 1.0
+      stamina_regen: 1.7
+      health_buff: 0
+      stamina_buff: 0
+      magicka_buff: 0
+    resists:
+      magic_resist: 0.95
+      fire_resist: 1.0
+      frost_resist: 1.0
+      shock_resist: 1.0
+      poison_resist: 1.0
+      disease_resist: 1.0
   redguard:
-    max_health: 110
-    max_magicka: 70
-    max_stamina: 120
-    health_regen: 0
-    magicka_regen: 1.0
-    stamina_regen: 1.65
+    main:
+      health_max: 110
+      magicka_max: 70
+      stamina_max: 120
+      health_regen: 0
+      magicka_regen: 1.0
+      stamina_regen: 1.65
+      health_buff: 0
+      stamina_buff: 0
+      magicka_buff: 0
+    resists:
+      magic_resist: 1.0
+      fire_resist: 1.0
+      frost_resist: 1.0
+      shock_resist: 1.0
+      poison_resist: 0.4
+      disease_resist: 0.25
   bosmer:
-    max_health: 90
-    max_magicka: 110
-    max_stamina: 120
-    health_regen: 0
-    magicka_regen: 1.05
-    stamina_regen: 1.65
+    main:
+      health_max: 90
+      magicka_max: 110
+      stamina_max: 120
+      health_regen: 0
+      magicka_regen: 1.05
+      stamina_regen: 1.65
+      health_buff: 0
+      stamina_buff: 0
+      magicka_buff: 0
+    resists:
+      magic_resist: 1.0
+      fire_resist: 1.0
+      frost_resist: 1.0
+      shock_resist: 1.0
+      poison_resist: 1.0
+      disease_resist: 0.25

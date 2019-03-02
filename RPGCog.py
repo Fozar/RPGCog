@@ -43,25 +43,38 @@ STATUS = [
     "Пчеле и жале",
     "Смеющейся крысе",
     "Спящем великане",
+    "Буйной фляге",
+    "Замершем очаге",
+    "Мертвецком меде",
+    "Вайлмире",
+    "Деревянном кружеве",
+    "Мороденном фрукте",
+    "Ночных воротах",
+    "Очаге и свече",
+    "Пике ветров",
+    "Серебряной Крови",
+    "Старом Хролдане",
+    "Четырех щитах",
 ]
 
 
 class Inventory(EmbeddedDocument):
     """ Inventory Class """
 
-    items = ListField(DictField())
+    items = ListField(DictField(), default=[])
 
-    def __init__(self, items=None, *args, **kwargs):
+    def __init__(self, items, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        if items is None:
-            items = []
         self.items = items  # Items list
+
+    def is_item_exists(self, item):
+        return next(
+            (_item for _item in self.items if _item["item_id"] == item.item_id), False
+        )
 
     # Add item to inventory
     def add_item(self, item, count):
-        item_exists = next(
-            (_item for _item in self.items if _item["item_id"] == item.item_id), False
-        )
+        item_exists = self.is_item_exists(item)
         if item_exists:
             item_exists["count"] += count
         else:
@@ -71,9 +84,7 @@ class Inventory(EmbeddedDocument):
 
     # Remove item from inventory
     def remove_item(self, item, count):
-        item_exists = next(
-            (_item for _item in self.items if _item["item_id"] == item.item_id), False
-        )
+        item_exists = self.is_item_exists(item)
         if item_exists:
             item_exists["count"] -= count
             self.items[:] = [item for item in self.items if item.get("count") > 0]
@@ -83,41 +94,35 @@ class Inventory(EmbeddedDocument):
 
 
 class Attributes(EmbeddedDocument):
-    """ Character Attribute Class
+    """ Character Attribute Class """
 
-        :param max_health: Maximum character health
-        :param max_stamina: Maximum character stamina
-        :param health_regen: Character health regeneration
-        :param stamina_regen: Character stamina regeneration
-
-    """
-
-    health = FloatField()
-    health_max = FloatField()
-    health_buff = FloatField(default=0)
-    stamina = FloatField()
-    stamina_max = FloatField()
-    stamina_buff = FloatField(default=0)
-    health_regen = FloatField()
-    stamina_regen = FloatField()
+    health = FloatField(default=10)
+    stamina = FloatField(default=10)
+    magicka = FloatField(default=10)
+    main = DictField(FloatField())
     armor_rating = IntField(default=0)
 
-    def __init__(
-        self, max_health, max_stamina, health_regen, stamina_regen, *args, **kwargs
-    ):
+    def __init__(self, main, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.health = self.health_max = max_health
-        self.stamina = self.stamina_max = max_stamina
-        self.health_regen = health_regen
-        self.stamina_regen = stamina_regen
+        self.main = main
 
-    def mod_health(self, damage):
-        self.health += damage
-        health_total = self.health_max + self.health_buff
-        if self.health > health_total:
-            self.health = health_total
-        elif self.health < 1:
-            self.health = 0
+    def mod_value(self, value, damage):
+        total = self.main[f"{value}_max"] + self.main[f"{value}_buff"]
+        attr = getattr(self, value)
+        if attr + damage <= total:
+            setattr(self, value, attr + damage)
+            attr = getattr(self, value)
+            if attr > total:
+                setattr(self, value, total)
+            elif attr < 1:
+                setattr(self, value, 0)
+        else:
+            setattr(self, value, total)
+
+    def birth(self):
+        self.health = self.main["health_max"]
+        self.stamina = self.main["stamina_max"]
+        self.magicka = self.main["magicka_max"]
 
 
 class Character(Document):
@@ -144,7 +149,16 @@ class Character(Document):
     attributes = EmbeddedDocumentField(Attributes)
 
     def __init__(
-        self, member_id, name, race, sex, description, attributes, *args, **values
+        self,
+        member_id,
+        name,
+        race,
+        sex,
+        description,
+        inventory,
+        attributes,
+        *args,
+        **values,
     ):
         super().__init__(*args, **values)
         self.member_id = member_id
@@ -152,7 +166,7 @@ class Character(Document):
         self.race = race
         self.sex = sex
         self.description = description
-        self.inventory = Inventory()
+        self.inventory = inventory
         self.attributes = attributes
 
     def lvl_up(self):
@@ -274,6 +288,7 @@ class RPGCog(Cog):
         self.CharSessions = []
         self.Red.loop.create_task(self.setup())
         self.Red.loop.create_task(self.change_status())
+        self.Red.loop.create_task(self.update_chars())
 
     async def setup(self):
         await self.Red.wait_until_ready()
@@ -298,6 +313,37 @@ class RPGCog(Cog):
             await self.Red.change_presence(activity=discord.Game(name=next(statuses)))
             await asyncio.sleep(random.randint(10800, 32400))
 
+    async def update_chars(self):
+        await self.Red.wait_until_ready()
+        timer = 5
+        while not self.Red.is_closed():
+            # Attributes regeneration
+            chars = self.CharacterClass.objects()
+            for char in chars:
+                char.attributes.mod_value(
+                    "health",
+                    char.attributes.main["health_max"]
+                    * char.attributes.main["health_regen"]
+                    * timer
+                    / 100,
+                )
+                char.attributes.mod_value(
+                    "stamina",
+                    char.attributes.main["stamina_max"]
+                    * char.attributes.main["stamina_regen"]
+                    * timer
+                    / 100,
+                )
+                char.attributes.mod_value(
+                    "magicka",
+                    char.attributes.main["magicka_max"]
+                    * char.attributes.main["magicka_regen"]
+                    * timer
+                    / 100,
+                )
+                char.save()
+            await asyncio.sleep(timer)
+
     @commands.command(name="inventory", aliases=["inv"])
     async def inventory(self, ctx, member: Union[discord.Member, discord.User] = None):
         """ Инвентарь персонажа """
@@ -309,7 +355,7 @@ class RPGCog(Cog):
 
         char = self.CharacterClass.objects(member_id=member_id).first()
         if not char:
-            await ctx.send(f"{member.mention}, персонаж не найден.")
+            await ctx.send(f"{author.mention}, персонаж не найден.")
             return
 
         embed = discord.Embed(
@@ -523,10 +569,55 @@ class RPGCog(Cog):
             char.inventory.remove_item(_item, count)
             char.save()
             if len(char.inventory.items) < 1:
-                inv = self.InventoryClass()
+                inv = self.InventoryClass([])
                 char.inventory = inv
                 char.save()
             await ctx.send(f"{author.mention}, предмет(ы) удален(ы).")
+
+    @commands.command(aliases=["stats"])
+    async def statistics(self, ctx, member: Union[discord.Member, discord.User] = None):
+        """ Характеристики персонажа """
+
+        author = ctx.author
+        if member is None:
+            member = author
+        member_id = str(member.id)
+        char = self.CharacterClass.objects(member_id=member_id).first()
+
+        if not char:
+            await ctx.send(f"{author.mention}, персонаж не найден.")
+            return
+
+        embed = discord.Embed(
+            title=f"Характеристики персонажа {char.name}",
+            colour=discord.Colour(0xC7C300),
+        )
+
+        embed.set_author(name=config.bot.name, icon_url=config.bot.icon_url)
+        embed.set_footer(text="Характеристики персонажа")
+
+        embed.add_field(
+            name="Магия",
+            value=f"{int(char.attributes.magicka)}/{int(char.attributes.magicka_max+char.attributes.magicka_buff)}",
+            inline=True,
+        )
+        embed.add_field(
+            name="Здоровье",
+            value=f"{int(char.attributes.health)}/{int(char.attributes.health_max+char.attributes.health_buff)}",
+            inline=True,
+        )
+        embed.add_field(
+            name="Запас сил",
+            value=f"{int(char.attributes.stamina)}/{int(char.attributes.stamina_max+char.attributes.stamina_buff)}",
+            inline=True,
+        )
+        embed.add_field(
+            name="Класс брони",
+            value=f"{int(char.attributes.armor_rating)}",
+            inline=True,
+        )
+
+        await ctx.send(embed=embed)
 
     @commands.group(invoke_without_command=True)
     async def char(self, ctx, member: Union[discord.Member, discord.User] = None):
@@ -557,10 +648,10 @@ class RPGCog(Cog):
 
             embed.add_field(
                 name="Характеристики",
-                value="**Раса:**           {}\n"
-                "**Пол:**            {}\n"
-                "**Уровень:**        {}\n"
-                "**Опыт:**           {}".format(race, sex, lvl, xp),
+                value=f"**Раса:**           {race}\n"
+                f"**Пол:**            {sex}\n"
+                f"**Уровень:**        {lvl}\n"
+                f"**Опыт:**           {xp}",
             )
 
             await ctx.send(embed=embed)
@@ -569,15 +660,15 @@ class RPGCog(Cog):
     async def char_new(self, ctx):
         """ Создать персонажа """
 
-        member = ctx.author
-        member_id = str(member.id)
+        author = ctx.author
+        member_id = str(author.id)
 
         async def cancel():
-            await ctx.send(f"{member.mention}, создание персонажа отменено.")
+            await ctx.send(f"{author.mention}, создание персонажа отменено.")
             if ctx in self.CharSessions:
                 self.CharSessions.remove(ctx)
 
-        # Проверка открытой сессии регистрации
+        # Check open registration session
         if next(
             (
                 session
@@ -588,19 +679,19 @@ class RPGCog(Cog):
         ):
             return
 
-        # Проверка регистрации
+        # Registration check
         if self.CharacterClass.objects(member_id=member_id):
             await ctx.send(
-                f"{member.mention}, у вас уже есть персонаж. "
+                f"{author.mention}, у вас уже есть персонаж. "
                 f"Введите {ctx.prefix}char delete, чтобы удалить его."
             )
             return
 
         self.CharSessions.append(ctx)
 
-        # Выбор имени
+        # Name selection
         await ctx.send(
-            f'{member.mention}, введите имя нового персонажа.\nДля отмены введите "отмена".'
+            f'{author.mention}, введите имя нового персонажа.\nДля отмены введите "отмена".'
         )
 
         async def name_select():
@@ -612,21 +703,21 @@ class RPGCog(Cog):
                 return "отмена"
             if len(name.content) < 3 or len(name.content) > 25:
                 await ctx.send(
-                    f"{member.mention}, в имени персонажа должно быть не менее 3 и не более 20 символов. "
+                    f"{author.mention}, в имени персонажа должно быть не менее 3 и не более 20 символов. "
                     "Повторите попытку.\n"
                     'Для отмены введите "отмена".'
                 )
                 return await name_select()
             elif name.content.count(" ") > 2:
                 await ctx.send(
-                    f"{member.mention}, имя персонажа не должно содержать больше 2 пробелов. "
+                    f"{author.mention}, имя персонажа не должно содержать больше 2 пробелов. "
                     "Повторите попытку.\n"
                     'Для отмены введите "отмена".'
                 )
                 return await name_select()
             elif not re.match("^[a-zа-яA-ZА-ЯёЁ][a-zA-Zа-яА-ЯёЁ '-]+$", name.content):
                 await ctx.send(
-                    f"{member.mention}, введены недопустимые символы. Повторите попытку.\n"
+                    f"{author.mention}, введены недопустимые символы. Повторите попытку.\n"
                     'Для отмена введите "отмена".'
                 )
                 return await name_select()
@@ -638,9 +729,9 @@ class RPGCog(Cog):
             await cancel()
             return
 
-        # Выбор расы
+        # Race selection
         await ctx.send(
-            f"{member.mention}, выберите расу персонажа.\n"
+            f"{author.mention}, выберите расу персонажа.\n"
             "Возможные варианты:\n"
             "\n"
             "    Аргонианин\n"
@@ -679,7 +770,7 @@ class RPGCog(Cog):
                 return race.content.lower().title()
             else:
                 await ctx.send(
-                    f"{member.mention}, не могу найти указанную расу. Повторите попытку.\n"
+                    f"{author.mention}, не могу найти указанную расу. Повторите попытку.\n"
                     'Для отмены введите "отмена".'
                 )
                 return await race_select()
@@ -689,9 +780,9 @@ class RPGCog(Cog):
             await cancel()
             return
 
-        # Выбор пола
+        # Sex selection
         await ctx.send(
-            f"{member.mention}, выберите пол персонажа (М/Ж).\n"
+            f"{author.mention}, выберите пол персонажа (М/Ж).\n"
             "\n"
             'Для отмены введите "отмена".'
         )
@@ -711,7 +802,7 @@ class RPGCog(Cog):
                 return sex.content
             else:
                 await ctx.send(
-                    f"{member.mention}, не могу найти указанный пол. Повторите попытку.\n"
+                    f"{author.mention}, не могу найти указанный пол. Повторите попытку.\n"
                     'Для отмены введите "отмена".'
                 )
                 return await sex_select()
@@ -721,10 +812,10 @@ class RPGCog(Cog):
             await cancel()
             return
 
-        # Описание персонажа
+        # Character description
         try:
             await ctx.send(
-                f"{member.mention}, опишите своего персонажа. Тут может быть описана внешность персонажа, его история, "
+                f"{author.mention}, опишите своего персонажа. Тут может быть описана внешность персонажа, его история, "
                 "привычки и другие особенности. Не стоит описывать снаряжение персонажа и другие "
                 "приобретаемые вещи. "
                 "\n\nВ описании персонажа должно быть не менее 50 и не более 1000 символов.\nДля отмены "
@@ -742,7 +833,7 @@ class RPGCog(Cog):
                 return description.content
             if len(description.content) < 50 or len(description.content) > 1000:
                 await ctx.send(
-                    f"{member.mention}, в описании персонажа должно быть не менее 50 и не более 1000 символов. "
+                    f"{author.mention}, в описании персонажа должно быть не менее 50 и не более 1000 символов. "
                     "Повторите попытку.\n"
                     'Для отмены введите "отмена".'
                 )
@@ -752,7 +843,7 @@ class RPGCog(Cog):
                 description.content,
             ):
                 await ctx.send(
-                    f"{member.mention}, введены недопустимые символы. Повторите попытку.\n"
+                    f"{author.mention}, введены недопустимые символы. Повторите попытку.\n"
                     'Для отмена введите "отмена".'
                 )
                 return await desc_select()
@@ -763,45 +854,42 @@ class RPGCog(Cog):
         if description_c.lower() == "отмена":
             await cancel()
             return
-        race_attrs = config.race_attrs[RACES[race_c]]
-        print(race_attrs)
-        attributes = self.AttributesClass(
-            max_health=race_attrs.max_health,
-            max_stamina=race_attrs.max_stamina,
-            health_regen=race_attrs.health_regen,
-            stamina_regen=race_attrs.stamina_regen,
-        )
+        race_attrs = config.race_attrs[RACES[race_c]].main
+        inventory = self.InventoryClass([])
+        attributes = self.AttributesClass(main=race_attrs)
+        attributes.birth()
 
-        # Сохранение персонажа
+        # Saving character
         char = self.CharacterClass(
             member_id=member_id,
             name=name_c,
             race=race_c,
             sex=sex_c,
             description=description_c,
+            inventory=inventory,
             attributes=attributes,
         )
         char.save()
-        await ctx.send(f"{member.mention}, ваш персонаж {name_c} создан!")
+        await ctx.send(f"{author.mention}, ваш персонаж {name_c} создан!")
         if ctx in self.CharSessions:
             self.CharSessions.remove(ctx)
-        print("Создан новый персонаж: {name_c}")
+        print(f"Создан новый персонаж: {name_c}")
 
     @char.command(name="delete", aliases=["del"])
     async def char_delete(self, ctx):
         """ Удалить персонажа """
 
-        member = ctx.author
-        member_id = str(member.id)
+        author = ctx.author
+        member_id = str(author.id)
 
         if not self.is_char_exists(member_id):
             await ctx.send(
-                f"{member.mention}, у вас нет персонажа. "
+                f"{author.mention}, у вас нет персонажа. "
                 f"Введите '{ctx.prefix}char new', чтобы создать"
             )
         else:
             await ctx.send(
-                f"{member.mention}, вы уверены, что хотите удалить своего персонажа?\n"
+                f"{author.mention}, вы уверены, что хотите удалить своего персонажа?\n"
                 "\n"
                 "ВНИМАНИЕ: Это действие нельзя отменить. Все ваши предметы, уровень и достижения будут "
                 "потеряны безвозвратно."
@@ -812,16 +900,16 @@ class RPGCog(Cog):
                     "message", timeout=30.0, check=MessagePredicate.same_context(ctx)
                 )
             except asyncio.TimeoutError:
-                await ctx.send(f"{member.mention}, удаление персонажа отменено.")
+                await ctx.send(f"{author.mention}, удаление персонажа отменено.")
                 return
             if msg.content.lower() in ["да", "д", "yes", "y"]:
                 self.CharacterClass.objects(member_id=member_id).delete()
                 await ctx.send(
-                    f"{member.mention}, ваш персонаж удален. "
-                    "Введите '{ctx.prefix}char new', чтобы создать нового."
+                    f"{author.mention}, ваш персонаж удален. "
+                    f"Введите '{ctx.prefix}char new', чтобы создать нового."
                 )
             else:
-                await ctx.send("{member.mention}, удаление персонажа отменено.")
+                await ctx.send(f"{author.mention}, удаление персонажа отменено.")
 
     def is_char_exists(self, member_id):
         if self.CharacterClass.objects(member_id=member_id):
