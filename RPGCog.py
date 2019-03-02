@@ -18,45 +18,6 @@ from .config import config
 
 Cog = getattr(commands, "Cog", object)
 
-INV_CATEGORIES = {"Item.Weapon": "ОРУЖИЕ", "Item.Armor": "БРОНЯ", "Item": "ДРУГОЕ"}
-SHOWN_STATS = {
-    "rarity": "Редкость",
-    "damage": "Урон",
-    "armor": "Броня",
-    "price": "Цена",
-}
-RACES = {
-    "Аргонианин": "argonian",
-    "Бретонец": "breton",
-    "Имперец": "imperial",
-    "Каджит": "khajit",
-    "Норд": "nord",
-    "Орк": "orc",
-    "Редгард": "redguard",
-    "Данмер": "dunmer",
-    "Альтмер": "altmer",
-    "Босмер": "bosmer",
-}
-STATUS = [
-    "Коллегии Бардов",
-    "Гарцующей кобыле",
-    "Пчеле и жале",
-    "Смеющейся крысе",
-    "Спящем великане",
-    "Буйной фляге",
-    "Замершем очаге",
-    "Мертвецком меде",
-    "Вайлмире",
-    "Деревянном кружеве",
-    "Мороденном фрукте",
-    "Ночных воротах",
-    "Очаге и свече",
-    "Пике ветров",
-    "Серебряной Крови",
-    "Старом Хролдане",
-    "Четырех щитах",
-]
-
 
 class Inventory(EmbeddedDocument):
     """ Inventory Class """
@@ -100,14 +61,19 @@ class Attributes(EmbeddedDocument):
     stamina = FloatField(default=10)
     magicka = FloatField(default=10)
     main = DictField(FloatField())
+    resists = DictField(FloatField())
     armor_rating = IntField(default=0)
 
-    def __init__(self, main, *args, **kwargs):
+    def __init__(self, main, resists, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.main = main
+        self.resists = resists
+
+    def get_total_value(self, value):
+        return self.main[f"{value}_max"] + self.main[f"{value}_buff"]
 
     def mod_value(self, value, damage):
-        total = self.main[f"{value}_max"] + self.main[f"{value}_buff"]
+        total = self.get_total_value(value)
         attr = getattr(self, value)
         if attr + damage <= total:
             setattr(self, value, attr + damage)
@@ -119,7 +85,7 @@ class Attributes(EmbeddedDocument):
         else:
             setattr(self, value, total)
 
-    def birth(self):
+    def restore_values(self):
         self.health = self.main["health_max"]
         self.stamina = self.main["stamina_max"]
         self.magicka = self.main["magicka_max"]
@@ -145,6 +111,7 @@ class Character(Document):
     lvl = IntField(default=1)
     xp = IntField(default=0)
     xp_factor = FloatField(default=1.0)
+    avatar = URLField(default=None)
     inventory = EmbeddedDocumentField(Inventory)
     attributes = EmbeddedDocumentField(Attributes)
 
@@ -595,28 +562,26 @@ class RPGCog(Cog):
 
         embed.set_author(name=config.bot.name, icon_url=config.bot.icon_url)
         embed.set_footer(text="Характеристики персонажа")
+        embed.description = "```Основные характеристики:```"
 
-        embed.add_field(
-            name="Магия",
-            value=f"{int(char.attributes.magicka)}/{int(char.attributes.magicka_max+char.attributes.magicka_buff)}",
-            inline=True,
-        )
-        embed.add_field(
-            name="Здоровье",
-            value=f"{int(char.attributes.health)}/{int(char.attributes.health_max+char.attributes.health_buff)}",
-            inline=True,
-        )
-        embed.add_field(
-            name="Запас сил",
-            value=f"{int(char.attributes.stamina)}/{int(char.attributes.stamina_max+char.attributes.stamina_buff)}",
-            inline=True,
-        )
+        def add_value(_embed, _char, category, name):
+            if category == "main":
+                value = f"{int(getattr(char.attributes, name))}/{int(char.attributes.get_total_value(name))}"
+            else:
+                value = f"{int(-(_char.attributes.resists[name]-1)*100)}%"
+            _embed.add_field(name=ATTRS[name], value=value, inline=True)
+
         embed.add_field(
             name="Класс брони",
             value=f"{int(char.attributes.armor_rating)}",
-            inline=True,
+            inline=False,
         )
-
+        add_value(embed, char, "main", "magicka")
+        add_value(embed, char, "main", "health")
+        add_value(embed, char, "main", "stamina")
+        embed.add_field(name="\u200b", value=f"```Сопротивления:```", inline=False)
+        for resist in char.attributes.resists:
+            add_value(embed, char, "resist", resist)
         await ctx.send(embed=embed)
 
     @commands.group(invoke_without_command=True)
@@ -632,29 +597,26 @@ class RPGCog(Cog):
         if not char:
             await ctx.send(f"{author.mention}, персонаж не найден.")
             await ctx.send_help()
-        else:
-            name = char.name
-            race = char.race
-            sex = char.sex
-            desc = char.description
-            lvl = char.lvl
-            xp = char.xp
+            return
 
-            embed = discord.Embed(
-                title=f"{name}", colour=discord.Colour(0xF5A623), description=f"{desc}"
-            )
-            embed.set_author(name=config.bot.name, icon_url=config.bot.icon_url)
-            embed.set_footer(text="Информация о персонаже")
+        embed = discord.Embed(
+            title=f"{char.name}",
+            colour=discord.Colour(0xF5A623),
+            description=f"{char.description}",
+        )
+        embed.set_author(name=config.bot.name, icon_url=config.bot.icon_url)
+        embed.set_thumbnail(url=char.avatar)
+        embed.set_footer(text="Информация о персонаже")
 
-            embed.add_field(
-                name="Характеристики",
-                value=f"**Раса:**           {race}\n"
-                f"**Пол:**            {sex}\n"
-                f"**Уровень:**        {lvl}\n"
-                f"**Опыт:**           {xp}",
-            )
+        embed.add_field(
+            name="Характеристики",
+            value=f"**Раса:**           {char.race}\n"
+            f"**Пол:**            {char.sex}\n"
+            f"**Уровень:**        {char.lvl}\n"
+            f"**Опыт:**           {char.xp}",
+        )
 
-            await ctx.send(embed=embed)
+        await ctx.send(embed=embed)
 
     @char.command(name="new")
     async def char_new(self, ctx):
@@ -854,10 +816,10 @@ class RPGCog(Cog):
         if description_c.lower() == "отмена":
             await cancel()
             return
-        race_attrs = config.race_attrs[RACES[race_c]].main
         inventory = self.InventoryClass([])
-        attributes = self.AttributesClass(main=race_attrs)
-        attributes.birth()
+        race_attrs = config.race_attrs[RACES[race_c]]
+        attributes = self.AttributesClass(race_attrs.main, race_attrs.resists)
+        attributes.restore_values()
 
         # Saving character
         char = self.CharacterClass(
@@ -875,6 +837,29 @@ class RPGCog(Cog):
             self.CharSessions.remove(ctx)
         print(f"Создан новый персонаж: {name_c}")
 
+    @char.command(name="set")
+    async def char_set(self, ctx, atr, value):
+        """ Изменить информацию о персонаже """
+
+        author = ctx.author
+        member_id = str(author.id)
+
+        if not self.is_char_exists(member_id):
+            await ctx.send(
+                f"{author.mention}, у вас нет персонажа. "
+                f"Введите '{ctx.prefix}char new', чтобы создать"
+            )
+            return
+        char = self.CharacterClass.objects(member_id=member_id).first()
+        if atr in ["avatar", "description"]:
+            setattr(char, atr, value)
+            char.save()
+            await ctx.send(
+                f"{author.mention}, информация о вашем персонаже успешно изменена."
+            )
+        else:
+            await ctx.send(f"{author.mention}, эта информация не может быть изменена.")
+
     @char.command(name="delete", aliases=["del"])
     async def char_delete(self, ctx):
         """ Удалить персонажа """
@@ -887,29 +872,30 @@ class RPGCog(Cog):
                 f"{author.mention}, у вас нет персонажа. "
                 f"Введите '{ctx.prefix}char new', чтобы создать"
             )
-        else:
-            await ctx.send(
-                f"{author.mention}, вы уверены, что хотите удалить своего персонажа?\n"
-                "\n"
-                "ВНИМАНИЕ: Это действие нельзя отменить. Все ваши предметы, уровень и достижения будут "
-                "потеряны безвозвратно."
-            )
+            return
 
-            try:
-                msg = await self.Red.wait_for(
-                    "message", timeout=30.0, check=MessagePredicate.same_context(ctx)
-                )
-            except asyncio.TimeoutError:
-                await ctx.send(f"{author.mention}, удаление персонажа отменено.")
-                return
-            if msg.content.lower() in ["да", "д", "yes", "y"]:
-                self.CharacterClass.objects(member_id=member_id).delete()
-                await ctx.send(
-                    f"{author.mention}, ваш персонаж удален. "
-                    f"Введите '{ctx.prefix}char new', чтобы создать нового."
-                )
-            else:
-                await ctx.send(f"{author.mention}, удаление персонажа отменено.")
+        await ctx.send(
+            f"{author.mention}, вы уверены, что хотите удалить своего персонажа?\n"
+            "\n"
+            "ВНИМАНИЕ: Это действие нельзя отменить. Все ваши предметы, уровень и достижения будут "
+            "потеряны безвозвратно."
+        )
+
+        try:
+            msg = await self.Red.wait_for(
+                "message", timeout=30.0, check=MessagePredicate.same_context(ctx)
+            )
+        except asyncio.TimeoutError:
+            await ctx.send(f"{author.mention}, удаление персонажа отменено.")
+            return
+        if msg.content.lower() in ["да", "д", "yes", "y"]:
+            self.CharacterClass.objects(member_id=member_id).delete()
+            await ctx.send(
+                f"{author.mention}, ваш персонаж удален. "
+                f"Введите '{ctx.prefix}char new', чтобы создать нового."
+            )
+        else:
+            await ctx.send(f"{author.mention}, удаление персонажа отменено.")
 
     def is_char_exists(self, member_id):
         if self.CharacterClass.objects(member_id=member_id):
@@ -925,3 +911,54 @@ def str_to_bool(s):
         return False
     else:
         return ValueError
+
+
+INV_CATEGORIES = {"Item.Weapon": "ОРУЖИЕ", "Item.Armor": "БРОНЯ", "Item": "ДРУГОЕ"}
+SHOWN_STATS = {
+    "rarity": "Редкость",
+    "damage": "Урон",
+    "armor": "Броня",
+    "price": "Цена",
+}
+ATTRS = {
+    "health": "Здоровье",
+    "stamina": "Запас сил",
+    "magicka": "Магия",
+    "magic_resist": "Магия",
+    "fire_resist": "Огонь",
+    "frost_resist": "Мороз",
+    "shock_resist": "Электричество",
+    "poison_resist": "Яды",
+    "disease_resist": "Болезни",
+}
+RACES = {
+    "Аргонианин": "argonian",
+    "Бретонец": "breton",
+    "Имперец": "imperial",
+    "Каджит": "khajit",
+    "Норд": "nord",
+    "Орк": "orc",
+    "Редгард": "redguard",
+    "Данмер": "dunmer",
+    "Альтмер": "altmer",
+    "Босмер": "bosmer",
+}
+STATUS = [
+    "Коллегии Бардов",
+    "Гарцующей кобыле",
+    "Пчеле и жале",
+    "Смеющейся крысе",
+    "Спящем великане",
+    "Буйной фляге",
+    "Замершем очаге",
+    "Мертвецком меде",
+    "Вайлмире",
+    "Деревянном кружеве",
+    "Мороденном фрукте",
+    "Ночных воротах",
+    "Очаге и свече",
+    "Пике ветров",
+    "Серебряной Крови",
+    "Старом Хролдане",
+    "Четырех щитах",
+]
