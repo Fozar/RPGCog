@@ -1,7 +1,7 @@
 from redbot.core.bot import Red
 
-from .RPGCog import RPGCog
+from .RPG import RPG
 
 
 def setup(bot: Red):
-    bot.add_cog(RPGCog(bot))
+    bot.add_cog(RPG(bot))

@@ -7,11 +7,12 @@ database:
   db: "rpg"
 
 bot:
-  name: "Deep Requiem"
-  icon_url: "https://pp.userapi.com/c844418/v844418281/1b87d4/1Ad2a7zIVZ0.jpg"
+  name: "Azured"
+  icon_url: "https://pp.userapi.com/c849228/v849228113/142fe8/bm5zl5eRLio.jpg"
 
 race_attrs:
   argonian:
+    unarmed_damage: 10
     main:
       health_max: 105
       magicka_max: 90
@@ -29,7 +30,27 @@ race_attrs:
       shock_resist: 1.0
       poison_resist: 0.0
       disease_resist: 0.25
+    skills:
+      one_handed: 5
+      two_handed: 5
+      archery: 5
+      block: 5
+      smithing: 5
+      heavy_armor: 5
+      light_armor: 15
+      pickpocket: 10
+      lockpicking: 15
+      sneak: 10
+      alchemy: 5
+      speech: 5
+      alteration: 10
+      conjuration: 5
+      destruction: 5
+      illusion: 5
+      restoration: 10
+      enchanting: 5
   breton:
+    unarmed_damage: 7
     main:
       health_max: 90
       magicka_max: 120
@@ -47,7 +68,27 @@ race_attrs:
       shock_resist: 1.0
       poison_resist: 1.0
       disease_resist: 1.0
+    skills:
+      one_handed: 5
+      two_handed: 5
+      archery: 5
+      block: 5
+      smithing: 5
+      heavy_armor: 5
+      light_armor: 5
+      pickpocket: 5
+      lockpicking: 5
+      sneak: 5
+      alchemy: 10
+      speech: 10
+      alteration: 10
+      conjuration: 20
+      destruction: 5
+      illusion: 10
+      restoration: 10
+      enchanting: 5
   dunmer:
+    unarmed_damage: 8
     main:
       health_max: 100
       magicka_max: 100
@@ -65,7 +106,27 @@ race_attrs:
       shock_resist: 1.0
       poison_resist: 1.0
       disease_resist: 1.0
+    skills:
+      one_handed: 15
+      two_handed: 5
+      archery: 5
+      block: 5
+      smithing: 5
+      heavy_armor: 5
+      light_armor: 10
+      pickpocket: 5
+      lockpicking: 5
+      sneak: 10
+      alchemy: 5
+      speech: 5
+      alteration: 10
+      conjuration: 5
+      destruction: 15
+      illusion: 10
+      restoration: 5
+      enchanting: 5
   altmer:
+    unarmed_damage: 5
     main:
       health_max: 90
       magicka_max: 130
@@ -83,7 +144,27 @@ race_attrs:
       shock_resist: 1.0
       poison_resist: 1.0
       disease_resist: 0.25
+    skills:
+      one_handed: 5
+      two_handed: 5
+      archery: 5
+      block: 5
+      smithing: 5
+      heavy_armor: 5
+      light_armor: 5
+      pickpocket: 5
+      lockpicking: 5
+      sneak: 5
+      alchemy: 5
+      speech: 5
+      alteration: 10
+      conjuration: 10
+      destruction: 15
+      illusion: 15
+      restoration: 10
+      enchanting: 10
   imperial:
+    unarmed_damage: 8
     main:
       health_max: 110
       magicka_max: 100
@@ -101,7 +182,27 @@ race_attrs:
       shock_resist: 1.0
       poison_resist: 1.0
       disease_resist: 1.0
+    skills:
+      one_handed: 10
+      two_handed: 5
+      archery: 5
+      block: 10
+      smithing: 5
+      heavy_armor: 10
+      light_armor: 5
+      pickpocket: 5
+      lockpicking: 5
+      sneak: 5
+      alchemy: 5
+      speech: 15
+      alteration: 5
+      conjuration: 5
+      destruction: 10
+      illusion: 5
+      restoration: 15
+      enchanting: 5
   khajit:
+    unarmed_damage: 15
     main:
       health_max: 90
       magicka_max: 90
@@ -119,7 +220,27 @@ race_attrs:
       shock_resist: 1.0
       poison_resist: 1.0
       disease_resist: 1.0
+    skills:
+      one_handed: 5
+      two_handed: 5
+      archery: 5
+      block: 5
+      smithing: 5
+      heavy_armor: 5
+      light_armor: 10
+      pickpocket: 10
+      lockpicking: 10
+      sneak: 20
+      alchemy: 10
+      speech: 10
+      alteration: 5
+      conjuration: 5
+      destruction: 5
+      illusion: 5
+      restoration: 5
+      enchanting: 5
   nord:
+    unarmed_damage: 9
     main:
       health_max: 120
       magicka_max: 80
@@ -137,7 +258,27 @@ race_attrs:
       shock_resist: 0.85
       poison_resist: 1.0
       disease_resist: 1.0
+    skills:
+      one_handed: 10
+      two_handed: 15
+      archery: 5
+      block: 10
+      smithing: 15
+      heavy_armor: 10
+      light_armor: 10
+      pickpocket: 5
+      lockpicking: 5
+      sneak: 5
+      alchemy: 5
+      speech: 5
+      alteration: 5
+      conjuration: 5
+      destruction: 5
+      illusion: 5
+      restoration: 5
+      enchanting: 5
   orc:
+    unarmed_damage: 10
     main:
       health_max: 130
       magicka_max: 60
@@ -155,7 +296,27 @@ race_attrs:
       shock_resist: 1.0
       poison_resist: 1.0
       disease_resist: 1.0
+    skills:
+      one_handed: 10
+      two_handed: 10
+      archery: 5
+      block: 10
+      smithing: 15
+      heavy_armor: 15
+      light_armor: 10
+      pickpocket: 5
+      lockpicking: 5
+      sneak: 5
+      alchemy: 5
+      speech: 5
+      alteration: 5
+      conjuration: 5
+      destruction: 5
+      illusion: 5
+      restoration: 5
+      enchanting: 5
   redguard:
+    unarmed_damage: 8
     main:
       health_max: 110
       magicka_max: 70
@@ -173,7 +334,27 @@ race_attrs:
       shock_resist: 1.0
       poison_resist: 0.4
       disease_resist: 0.25
+    skills:
+      one_handed: 20
+      two_handed: 10
+      archery: 10
+      block: 10
+      smithing: 10
+      heavy_armor: 5
+      light_armor: 10
+      pickpocket: 5
+      lockpicking: 5
+      sneak: 5
+      alchemy: 5
+      speech: 5
+      alteration: 5
+      conjuration: 5
+      destruction: 5
+      illusion: 5
+      restoration: 5
+      enchanting: 5
   bosmer:
+    unarmed_damage: 5
     main:
       health_max: 90
       magicka_max: 110
@@ -191,3 +372,22 @@ race_attrs:
       shock_resist: 1.0
       poison_resist: 1.0
       disease_resist: 0.25
+    skills:
+      one_handed: 5
+      two_handed: 5
+      archery: 20
+      block: 5
+      smithing: 5
+      heavy_armor: 5
+      light_armor: 10
+      pickpocket: 10
+      lockpicking: 10
+      sneak: 10
+      alchemy: 10
+      speech: 5
+      alteration: 5
+      conjuration: 5
+      destruction: 5
+      illusion: 5
+      restoration: 5
+      enchanting: 5

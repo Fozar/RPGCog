@@ -12,6 +12,7 @@ import discord
 from redbot.core import checks
 from redbot.core.bot import Red
 from redbot.core.commands import commands
+from redbot.core.utils.menus import menu, DEFAULT_CONTROLS
 from redbot.core.utils.predicates import MessagePredicate
 
 from .config import config
@@ -62,12 +63,16 @@ class Attributes(EmbeddedDocument):
     magicka = FloatField(default=10)
     main = DictField(FloatField())
     resists = DictField(FloatField())
+    skills = DictField(IntField())
     armor_rating = IntField(default=0)
+    unarmed_damage = IntField()
 
-    def __init__(self, main, resists, *args, **kwargs):
+    def __init__(self, main, resists, skills, unarmed_damage, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.main = main
         self.resists = resists
+        self.skills = skills
+        self.unarmed_damage = unarmed_damage
 
     def get_total_value(self, value):
         return self.main[f"{value}_max"] + self.main[f"{value}_buff"]
@@ -241,7 +246,7 @@ class Weapon(Item):
         self.damage = damage  # Weapon damage
 
 
-class RPGCog(Cog):
+class RPG(Cog):
     """ RPG Cog """
 
     def __init__(self, bot: Red):
@@ -268,8 +273,6 @@ class RPGCog(Cog):
             password=config.database.password,
         )
 
-        print("RPGCog loaded")
-
     async def change_status(self):
         await self.Red.wait_until_ready()
         status = STATUS[:]
@@ -277,7 +280,15 @@ class RPGCog(Cog):
         statuses = cycle(status)
 
         while not self.Red.is_closed():
-            await self.Red.change_presence(activity=discord.Game(name=next(statuses)))
+            status = (
+                self.Red.guilds[0].me.status
+                if len(self.Red.guilds) > 0
+                else discord.Status.online
+            )
+            activity = discord.Activity(
+                name=next(statuses), type=discord.ActivityType.watching
+            )
+            await self.Red.change_presence(status=status, activity=activity)
             await asyncio.sleep(random.randint(10800, 32400))
 
     async def update_chars(self):
@@ -285,7 +296,7 @@ class RPGCog(Cog):
         timer = 5
         while not self.Red.is_closed():
             # Attributes regeneration
-            chars = self.CharacterClass.objects()
+            chars = self.CharacterClass.objects
             for char in chars:
                 char.attributes.mod_value(
                     "health",
@@ -325,23 +336,17 @@ class RPGCog(Cog):
             await ctx.send(f"{author.mention}, персонаж не найден.")
             return
 
-        embed = discord.Embed(
-            title=f"Инвентарь персонажа {char.name}", colour=discord.Colour(0x8B572A)
-        )
-        embed.set_author(name=config.bot.name, icon_url=config.bot.icon_url)
-        embed.set_footer(text="Инвентарь персонажа")
-
         async def empty_inventory():
             embed.description = "Инвентарь пуст."
             await ctx.send(embed=embed)
 
-        if not char.inventory.items:
-            await empty_inventory()
-            return
-
         item_lists = {}  # Списки предметов по категориям
         for category in INV_CATEGORIES:
             item_lists[category] = []
+
+        if not char.inventory.items:
+            await empty_inventory()
+            return
 
         for item in char.inventory.items:
             count = item["count"]
@@ -355,32 +360,32 @@ class RPGCog(Cog):
                 await empty_inventory()
                 return
 
-        def add_category(_embed, _category_name, _items):
-            _embed.add_field(
-                name="=" * 58,
-                value=f"**```fix\n[{_category_name}] ({len(_items)})\n```**",
-                inline=False,
+        pages = []
+        for category, name in INV_CATEGORIES.items():
+            if not item_lists[category]:
+                continue
+            item_lists[category][:] = sorted(
+                item_lists[category], key=itemgetter("name")
             )
-            for _stats in _items:
+            embed = discord.Embed(
+                title=f"Инвентарь персонажа {char.name}",
+                colour=discord.Colour(0x8B572A),
+                description=f"**```fix\n[{name.upper()}] ({len(item_lists[category])})\n```**",
+            )
+            embed.set_author(name=config.bot.name, icon_url=config.bot.icon_url)
+            embed.set_footer(text="Инвентарь персонажа")
+            for stats in item_lists[category]:
                 text = "```autohotkey\n"
-                for _stat in SHOWN_STATS:
-                    if _stat in _stats:
-                        text += f"{SHOWN_STATS[_stat]}: {_stats[_stat]}\n"
+                for stat in SHOWN_STATS:
+                    if stat in stats:
+                        text += f"{SHOWN_STATS[stat]}: {stats[stat]}\n"
                 text += "```"
                 embed.add_field(
-                    name=f"{_stats['name']} ({_stats['count']})",
-                    value=text,
-                    inline=True,
+                    name=f"{stats['name']} ({stats['count']})", value=text, inline=True
                 )
+            pages.append(embed)
 
-        for category in item_lists:
-            if item_lists[category]:
-                item_lists[category][:] = sorted(
-                    item_lists[category], key=itemgetter("name")
-                )
-                add_category(embed, INV_CATEGORIES[category], item_lists[category])
-
-        await ctx.send(embed=embed)
+        await menu(ctx, pages, DEFAULT_CONTROLS)
 
     @commands.group(invoke_without_command=True)
     async def item(self, ctx, *, item_name):
@@ -555,34 +560,40 @@ class RPGCog(Cog):
             await ctx.send(f"{author.mention}, персонаж не найден.")
             return
 
-        embed = discord.Embed(
-            title=f"Характеристики персонажа {char.name}",
-            colour=discord.Colour(0xC7C300),
-        )
-
-        embed.set_author(name=config.bot.name, icon_url=config.bot.icon_url)
-        embed.set_footer(text="Характеристики персонажа")
-        embed.description = "```Основные характеристики:```"
-
-        def add_value(_embed, _char, category, name):
+        pages = []
+        for category, name in STATS_CATEGORIES.items():
+            embed = discord.Embed(
+                title=f"Характеристики персонажа {char.name}",
+                colour=discord.Colour(0xC7C300),
+                description=f"```{name.upper()}```",
+            )
+            embed.set_author(name=config.bot.name, icon_url=config.bot.icon_url)
+            embed.set_footer(text="Характеристики персонажа")
             if category == "main":
-                value = f"{int(getattr(char.attributes, name))}/{int(char.attributes.get_total_value(name))}"
+                for stat in ["magicka", "health", "stamina"]:
+                    value = f"{int(getattr(char.attributes, stat))}/{int(char.attributes.get_total_value(stat))}"
+                    embed.add_field(name=ATTRS[stat], value=value, inline=True)
+                embed.add_field(
+                    name="Класс брони",
+                    value=f"{int(char.attributes.armor_rating)}",
+                    inline=False,
+                )
+                embed.add_field(
+                    name="Урон без оружия",
+                    value=f"{int(char.attributes.armor_rating)}",
+                    inline=False,
+                )
+            elif category == "resists":
+                for resist in char.attributes.resists:
+                    value = f"{int(-(char.attributes.resists[resist]-1)*100)}%"
+                    embed.add_field(name=ATTRS[resist], value=value, inline=True)
             else:
-                value = f"{int(-(_char.attributes.resists[name]-1)*100)}%"
-            _embed.add_field(name=ATTRS[name], value=value, inline=True)
+                for skill in char.attributes.skills:
+                    value = char.attributes.skills[skill]
+                    embed.add_field(name=ATTRS[skill], value=value, inline=True)
+            pages.append(embed)
 
-        embed.add_field(
-            name="Класс брони",
-            value=f"{int(char.attributes.armor_rating)}",
-            inline=False,
-        )
-        add_value(embed, char, "main", "magicka")
-        add_value(embed, char, "main", "health")
-        add_value(embed, char, "main", "stamina")
-        embed.add_field(name="\u200b", value=f"```Сопротивления:```", inline=False)
-        for resist in char.attributes.resists:
-            add_value(embed, char, "resist", resist)
-        await ctx.send(embed=embed)
+        await menu(ctx, pages, DEFAULT_CONTROLS)
 
     @commands.group(invoke_without_command=True)
     async def char(self, ctx, member: Union[discord.Member, discord.User] = None):
@@ -605,7 +616,8 @@ class RPGCog(Cog):
             description=f"{char.description}",
         )
         embed.set_author(name=config.bot.name, icon_url=config.bot.icon_url)
-        embed.set_thumbnail(url=char.avatar)
+        if char.avatar:
+            embed.set_thumbnail(url=char.avatar)
         embed.set_footer(text="Информация о персонаже")
 
         embed.add_field(
@@ -818,7 +830,12 @@ class RPGCog(Cog):
             return
         inventory = self.InventoryClass([])
         race_attrs = config.race_attrs[RACES[race_c]]
-        attributes = self.AttributesClass(race_attrs.main, race_attrs.resists)
+        attributes = self.AttributesClass(
+            race_attrs.main,
+            race_attrs.resists,
+            race_attrs.skills,
+            race_attrs.unarmed_damage,
+        )
         attributes.restore_values()
 
         # Saving character
@@ -913,7 +930,12 @@ def str_to_bool(s):
         return ValueError
 
 
-INV_CATEGORIES = {"Item.Weapon": "ОРУЖИЕ", "Item.Armor": "БРОНЯ", "Item": "ДРУГОЕ"}
+INV_CATEGORIES = {"Item.Weapon": "Оружие", "Item.Armor": "Броня", "Item": "Другое"}
+STATS_CATEGORIES = {
+    "main": "Основные характеристики",
+    "resists": "Сопротивления",
+    "skills": "Навыки",
+}
 SHOWN_STATS = {
     "rarity": "Редкость",
     "damage": "Урон",
@@ -924,12 +946,31 @@ ATTRS = {
     "health": "Здоровье",
     "stamina": "Запас сил",
     "magicka": "Магия",
+    "unarmed_damage": "Урон без оружия",
     "magic_resist": "Магия",
     "fire_resist": "Огонь",
     "frost_resist": "Мороз",
     "shock_resist": "Электричество",
     "poison_resist": "Яды",
     "disease_resist": "Болезни",
+    "one_handed": "Одноручное оружие",
+    "two_handed": "Двуручное оружие",
+    "archery": "Стрельба",
+    "block": "Блокирование",
+    "smithing": "Кузнечное дело",
+    "heavy_armor": "Тяжелая броня",
+    "light_armor": "Легкая броня",
+    "pickpocket": "Карманные кражи",
+    "lockpicking": "Взлом",
+    "sneak": "Скрытность",
+    "alchemy": "Алхимия",
+    "speech": "Красноречие",
+    "alteration": "Изменение",
+    "conjuration": "Колдовство",
+    "destruction": "Разрушение",
+    "illusion": "Иллюзия",
+    "restoration": "Восстановление",
+    "enchanting": "Зачарование",
 }
 RACES = {
     "Аргонианин": "argonian",
@@ -944,21 +985,11 @@ RACES = {
     "Босмер": "bosmer",
 }
 STATUS = [
-    "Коллегии Бардов",
-    "Гарцующей кобыле",
-    "Пчеле и жале",
-    "Смеющейся крысе",
-    "Спящем великане",
-    "Буйной фляге",
-    "Замершем очаге",
-    "Мертвецком меде",
-    "Вайлмире",
-    "Деревянном кружеве",
-    "Мороденном фрукте",
-    "Ночных воротах",
-    "Очаге и свече",
-    "Пике ветров",
-    "Серебряной Крови",
-    "Старом Хролдане",
-    "Четырех щитах",
+    "на смертных",
+    "на восход",
+    "на закат",
+    "на ночное небо",
+    "в сумерках",
+    "на луну",
+    "на звезды",
 ]
