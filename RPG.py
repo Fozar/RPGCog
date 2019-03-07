@@ -12,7 +12,7 @@ import discord
 from redbot.core import checks
 from redbot.core.bot import Red
 from redbot.core.commands import commands
-from redbot.core.utils.menus import menu, DEFAULT_CONTROLS
+from redbot.core.utils.menus import menu, DEFAULT_CONTROLS, close_menu
 from redbot.core.utils.predicates import MessagePredicate
 
 from .config import config
@@ -23,36 +23,55 @@ Cog = getattr(commands, "Cog", object)
 class Inventory(EmbeddedDocument):
     """ Inventory Class """
 
-    items = ListField(DictField(), default=[])
+    items = DictField(
+        ListField(DictField()), default={"Weapon": [], "Armor": [], "Item": []}
+    )
 
     def __init__(self, items, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.items = items  # Items list
 
-    def is_item_exists(self, item):
-        return next(
-            (_item for _item in self.items if _item["item_id"] == item.item_id), False
+    def get_item(self, item):
+        """ Get item from inventory """
+        category = re.sub(r"Item.", "", item["_cls"])
+        found_item = next(
+            (
+                _item
+                for _item in self.items[category]
+                if _item["item_id"] == item.item_id
+            ),
+            False,
         )
-
-    # Add item to inventory
-    def add_item(self, item, count):
-        item_exists = self.is_item_exists(item)
-        if item_exists:
-            item_exists["count"] += count
+        if found_item:
+            return found_item
         else:
+            raise ItemNotFoundInInventory
+
+    def add_item(self, item, count):
+        category = re.sub(r"Item.", "", item["_cls"])
+        try:
+            _item = self.get_item(item)
+            _item["count"] += count
+        except ItemNotFoundInInventory:
             new_item = {"item_id": item.id, "count": count}
-            self.items.append(new_item)
-        self.items[:] = [item for item in self.items if item.get("count") > 0]
+            self.items[category].append(new_item)
+        self.items[category][:] = [
+            item for item in self.items[category] if item.get("count") > 0
+        ]
 
     # Remove item from inventory
     def remove_item(self, item, count):
-        item_exists = self.is_item_exists(item)
-        if item_exists:
-            item_exists["count"] -= count
-            self.items[:] = [item for item in self.items if item.get("count") > 0]
-            if len(self.items) < 1:
+        """ Remove item from inventory """
+        _item = self.get_item(item)
+        category = re.sub(r"Item.", "", item["_cls"])
+        if _item:
+            _item["count"] -= count
+            self.items[category][:] = [
+                item for item in self.items[category] if item.get("count") > 0
+            ]
+            if len(self.items[category]) < 1:
                 blank_item = {"item_id": "", "count": 0}
-                self.items.append(blank_item)
+                self.items[category].append(blank_item)
 
 
 class Attributes(EmbeddedDocument):
@@ -91,6 +110,7 @@ class Attributes(EmbeddedDocument):
             setattr(self, value, total)
 
     def restore_values(self):
+        """ Restore Health, Stamina and Magicka """
         self.health = self.main["health_max"]
         self.stamina = self.main["stamina_max"]
         self.magicka = self.main["magicka_max"]
@@ -330,36 +350,34 @@ class RPG(Cog):
         if member is None:
             member = author
         member_id = str(member.id)
-
         char = self.CharacterClass.objects(member_id=member_id).first()
         if not char:
             await ctx.send(f"{author.mention}, персонаж не найден.")
             return
-
-        async def empty_inventory():
-            embed.description = "Инвентарь пуст."
-            await ctx.send(embed=embed)
-
         item_lists = {}  # Списки предметов по категориям
         for category in INV_CATEGORIES:
             item_lists[category] = []
 
-        if not char.inventory.items:
-            await empty_inventory()
-            return
+        async def inventory_is_empty():
+            _embed = discord.Embed(
+                title=f"Инвентарь персонажа {char.name}",
+                colour=discord.Colour(0x8B572A),
+                description=f"Инвентарь пуст.",
+            )
+            await ctx.send(embed=_embed)
 
-        for item in char.inventory.items:
-            count = item["count"]
-            if item and count > 0:
-                _item = self.ItemClass.objects(item_id=item["item_id"]).first()
-                stats = {"count": count}
-                for stat in _item:
-                    stats[stat] = _item[stat]
-                item_lists[_item["_cls"]].append(stats)
-            else:
-                await empty_inventory()
-                return
-
+        for category in char.inventory.items:
+            for item in char.inventory.items[category]:
+                count = item["count"]
+                if item and count > 0:
+                    _item = self.ItemClass.objects(item_id=item["item_id"]).first()
+                    stats = {"count": count}
+                    for stat in _item:
+                        stats[stat] = _item[stat]
+                    item_lists[_item["_cls"]].append(stats)
+                else:
+                    await inventory_is_empty()
+                    return
         pages = []
         for category, name in INV_CATEGORIES.items():
             if not item_lists[category]:
@@ -384,8 +402,12 @@ class RPG(Cog):
                     name=f"{stats['name']} ({stats['count']})", value=text, inline=True
                 )
             pages.append(embed)
-
-        await menu(ctx, pages, DEFAULT_CONTROLS)
+        if len(pages) > 1:
+            await menu(ctx, pages, DEFAULT_CONTROLS)
+        elif len(pages) == 1:
+            await menu(ctx, pages, {"❌": close_menu})
+        else:
+            await inventory_is_empty()
 
     @commands.group(invoke_without_command=True)
     async def item(self, ctx, *, item_name):
@@ -470,7 +492,8 @@ class RPG(Cog):
         )
         signature = list(inspect.getfullargspec(new_item.__init__).args)
         if args:
-            for arg, value in zip(signature[len(signature) - len(args):], list(args)):
+            args_len = len(signature) - len(args)
+            for arg, value in zip(signature[args_len:], list(args)):
                 setattr(new_item, arg, value)
 
         new_item.save()
@@ -538,13 +561,12 @@ class RPG(Cog):
             )
         else:
             _item = _items.first()
-            char.inventory.remove_item(_item, count)
-            char.save()
-            if len(char.inventory.items) < 1:
-                inv = self.InventoryClass([])
-                char.inventory = inv
+            try:
+                char.inventory.remove_item(_item, count)
                 char.save()
-            await ctx.send(f"{author.mention}, предмет(ы) удален(ы).")
+                await ctx.send(f"{author.mention}, предмет(ы) удален(ы).")
+            except ItemNotFoundInInventory:
+                await ctx.send(f"{author.mention}, предмет не найден в инвентаре.")
 
     @commands.command(aliases=["stats"])
     async def statistics(self, ctx, member: Union[discord.Member, discord.User] = None):
@@ -828,7 +850,7 @@ class RPG(Cog):
         if description_c.lower() == "отмена":
             await cancel()
             return
-        inventory = self.InventoryClass([])
+        inventory = self.InventoryClass({"Weapon": [], "Armor": [], "Item": []})
         race_attrs = config.race_attrs[RACES[race_c]]
         attributes = self.AttributesClass(
             race_attrs.main,
@@ -919,6 +941,10 @@ class RPG(Cog):
             return True
         else:
             return False
+
+
+class ItemNotFoundInInventory(Exception):
+    pass
 
 
 def str_to_bool(s):
