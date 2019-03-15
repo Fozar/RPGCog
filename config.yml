@@ -9,6 +9,14 @@ database:
 bot:
   name: "Azured"
   icon_url: "https://pp.userapi.com/c849228/v849228113/142fe8/bm5zl5eRLio.jpg"
+  statuses:
+    - "на смертных"
+    - "на восход"
+    - "на закат"
+    - "на ночное небо"
+    - "в сумерки"
+    - "на луну"
+    - "на звезды"
 
 race_attrs:
   argonian:
