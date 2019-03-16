@@ -612,8 +612,8 @@ class Character(Document):
 
     member_id = StringField(primary_key=True)
     name = StringField(max_length=25)
-    race = StringField(choices=config.races.keys())
-    sex = StringField(choices=config.genders.keys())
+    race = StringField(choices=config.humanize.races.keys())
+    sex = StringField(choices=config.humanize.genders.keys())
     desc = StringField(max_length=1500)
     lvl = IntField(default=1, min_value=1)
     xp = IntField(default=0, min_value=0)
@@ -699,8 +699,15 @@ class RPG(Cog):
         )
 
     async def change_status(self):
+        """Changes the bot status through random time.
+
+        The time can be changed in the config in the `bot` section.
+        status_change_min in minimum time. status_change_max - maximum.
+
+        """
         await self.Red.wait_until_ready()
-        status = config.bot.statuses[:]
+        _config = config.bot
+        status = _config.statuses[:]
         random.shuffle(status)
         statuses = cycle(status)
 
@@ -714,7 +721,9 @@ class RPG(Cog):
                 name=next(statuses), type=discord.ActivityType.watching
             )
             await self.Red.change_presence(status=status, activity=activity)
-            await asyncio.sleep(random.randint(10800, 32400))
+            await asyncio.sleep(
+                random.randint(_config.status_change_min, _config.status_change_max)
+            )
 
     async def update_chars(self):
         await self.Red.wait_until_ready()
@@ -774,8 +783,8 @@ class RPG(Cog):
 
         embed.add_field(
             name="Характеристики",
-            value=f"**Раса:**           {config.races[char.race]['name']}\n"
-            f"**Пол:**            {config.genders[char.sex]}\n"
+            value=f"**Раса:**           {config.humanize.races[char.race]}\n"
+            f"**Пол:**            {config.humanize.genders[char.sex]}\n"
             f"**Уровень:**        {char.lvl}\n"
             f"**Опыт:**           {char.xp}",
         )
@@ -899,7 +908,7 @@ class RPG(Cog):
             return
 
         pages = []
-        for category, name in config.inv_settings.inv_categories.items():
+        for category, name in config.humanize.inventory.inv_categories.items():
             items = char.inventory.items[category]
             if not items:
                 continue
@@ -928,7 +937,7 @@ class RPG(Cog):
                 embed.set_footer(text="Инвентарь персонажа")
                 for stats in item_stats:
                     text = "```autohotkey\n"
-                    for stat, _name in config.inv_settings.inv_stats.items():
+                    for stat, _name in config.humanize.inventory.inv_stats.items():
                         if stat in stats:
                             text += f"{_name.title()}: {stats[stat]}\n"
                     text += "```"
@@ -955,7 +964,7 @@ class RPG(Cog):
             return
 
         color = discord.Colour(
-            int(getattr(config.item_settings.colors, _item.rarity.lower()), 0)
+            int(getattr(config.game.item_settings.colors, _item.rarity.lower()), 0)
         )
         embed = discord.Embed(
             title=f"{_item.name}", colour=color, description=f"*{_item.desc}*"
@@ -963,7 +972,7 @@ class RPG(Cog):
 
         embed.set_author(name=config.bot.name, icon_url=config.bot.icon_url)
         embed.set_footer(text="Информация о предмете")
-        for stat, name in config.inv_settings.inv_stats.items():
+        for stat, name in config.humanize.inventory.inv_stats.items():
             if stat in _item:
                 embed.add_field(
                     name=name.title(), value=f"{getattr(_item, stat)}", inline=True
@@ -1091,20 +1100,8 @@ class RPG(Cog):
         if session in self.register_sessions:
             self.register_sessions.remove(session)
         if session.complete:
-            race = list(config.races.keys())[  # Returns dictionary key by value
-                list(config.races.values()).index(
-                    next(  # Returns a dictionary with a race that contains the required race name.
-                        (
-                            race
-                            for race in config.races.values()
-                            if race["name"] == session.char["race"]
-                        ),
-                        False,
-                    )
-                )
-            ]
             inventory = self.InventoryClass({"Weapon": [], "Armor": [], "Item": []})
-            race_attrs = config.races[race]
+            race_attrs = config.game.races[session.char["race"]]
             attributes = self.AttributesClass(
                 race_attrs.main,
                 race_attrs.resists,
@@ -1116,7 +1113,7 @@ class RPG(Cog):
             char = self.CharacterClass(
                 member_id=session.char["member_id"],
                 name=session.char["name"],
-                race=race,
+                race=session.char["race"],
                 sex=session.char["sex"],
                 desc=session.char["desc"],
                 inventory=inventory,
@@ -1207,7 +1204,7 @@ class RPG(Cog):
         and changes the attributes of the character, if necessary.
 
         Args:
-            char (Character):
+            char (Character): Character on which the item is unequipped.
             slot (str): Item slot from which there is a need to remove the item.
         """
         equipment = char.equipment
@@ -1225,7 +1222,7 @@ class RPG(Cog):
         """Equips the item.
 
         Args:
-            char (Character):
+            char (Character): Character on which the item is equipped.
             item (dict): Sample item from inventory.
 
         Raises:
